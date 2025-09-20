@@ -1,0 +1,14 @@
+{
+  "name": "mindforge-root",
+  "private": true,
+  "engines": { "node": ">=20 <21" },
+  "scripts": {
+    "dev": "npm --prefix desktop run dev",
+    "build": "npm --prefix desktop run build",
+    "typecheck": "npm --prefix desktop run typecheck",
+    "lint": "npm --prefix desktop run lint",
+    "start": "npm --prefix desktop run start",
+    "build:win": "npm --prefix desktop run build:win"
+  }
+}
+
