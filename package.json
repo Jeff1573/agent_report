@@ -2,22 +2,22 @@
   "name": "mindforge-root",
   "private": true,
   "engines": { "node": ">=20 <21" },
+  "workspaces": [
+    "packages/*",
+    "desktop"
+  ],
+  "packageManager": "npm@10.9.2",
   "scripts": {
-    "dev": "npm --prefix desktop run dev",
-    "build": "npm --prefix desktop run build",
-    "typecheck": "npm --prefix desktop run typecheck",
-    "lint": "npm --prefix desktop run lint",
-    "start": "npm --prefix desktop run start",
-    "build:win": "npm --prefix desktop run build:win",
-    "win:clean": "if exist desktop\\node_modules rmdir /s /q desktop\\node_modules",
-    "win:prep": "npm run win:clean && npm --prefix desktop ci",
-    "win:dev": "npm run win:prep && npm --prefix desktop run dev",
-    "win:build": "npm run win:prep && npm --prefix desktop run build",
-    "win:build:win": "npm run win:prep && npm --prefix desktop run build:win"
-    ,
-    "bridge:dev": "bash scripts/wsl2win.sh dev",
-    "bridge:start": "bash scripts/wsl2win.sh start",
-    "bridge:build": "bash scripts/wsl2win.sh build",
-    "bridge:build:win": "bash scripts/wsl2win.sh build:win"
+    "dev": "npm run dev -w ./desktop",
+    "build": "npm run build -w ./desktop",
+    "typecheck": "npm run typecheck -w ./desktop",
+    "lint": "npm run lint -w ./desktop",
+    "start": "npm run start -w ./desktop",
+    "build:win": "npm run build:win -w ./desktop",
+    "build:all": "npm run build --workspaces --if-present",
+    "dev:all": "npm run dev --workspaces --if-present",
+    "typecheck:all": "npm run typecheck --workspaces --if-present",
+    "lint:all": "npm run lint --workspaces --if-present",
+    "test:all": "npm run test --workspaces --if-present"
   }
 }
