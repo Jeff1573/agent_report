@@ -1,3 +1,4 @@
 .workflow/
 node_modules/
 .node/
+.vscode/

@@ -4,8 +4,8 @@
 
 ### 1. 开发环境与准备
 
-- Node.js：建议使用 LTS v20。仓库已内置二进制：`desktop/.node/node-v20.18.1-linux-x64/bin`（Windows 可使用系统 Node 20）。
-- 包管理器：npm。
+- Node.js：使用全局 Node.js LTS v22（建议 22.x）。不再内置本地 Node，可通过 nvm 管理：`nvm use 22`。
+- 包管理器：npm（使用系统全局安装）。
 - 平台建议：
   - 开发与运行验证：Windows 宿主或带完整 GUI 的 Linux 桌面环境。
   - Linux 容器/WSL：可执行编译与打包，但运行 Electron 可能缺少 GUI 依赖（如 `libnspr4.so`）。
@@ -20,14 +20,12 @@
 
 ### 3. 常用命令（在 `desktop/` 内）
 
-- 安装依赖：`./.node/node-v20.18.1-linux-x64/bin/npm install`
-- 启动开发（HMR）：`./.node/node-v20.18.1-linux-x64/bin/npm run dev`
-- 类型检查：`./.node/node-v20.18.1-linux-x64/bin/npm run typecheck`
-- 代码检查：`./.node/node-v20.18.1-linux-x64/bin/npm run lint`
-- 生产构建：`./.node/node-v20.18.1-linux-x64/bin/npm run build`
-- Windows 打包（NSIS）：`./.node/node-v20.18.1-linux-x64/bin/npm run build:win`
-
-Windows/本机 Node 亦可直接使用 `npm` 执行同名命令。
+- 安装依赖：`npm ci`（首次或切换平台建议使用）或 `npm install`
+- 启动开发（HMR）：`npm run dev`
+- 类型检查：`npm run typecheck`
+- 代码检查：`npm run lint`
+- 生产构建：`npm run build`
+- Windows 打包（NSIS）：`npm run build:win`
 
 ### 4. 运行与调试
 
@@ -63,7 +61,7 @@ Windows/本机 Node 亦可直接使用 `npm` 执行同名命令。
 
 ### 8. 常见问题（FAQ）
 
-- esbuild/Node 版本冲突：统一使用 Node 20 LTS；如仍异常，可通过 `overrides.esbuild` 固定版本。
+- esbuild/Node 版本冲突：统一使用 Node 22 LTS；如仍异常，可通过 `overrides.esbuild` 固定版本，并在切换平台后执行 `npm rebuild`。
 - 依赖安装慢或失败：检查网络代理，或切换官方/镜像源；electron 二进制下载可配置镜像（见 `electron-builder.yml` 的 `electronDownload.mirror`）。
 - antd 样式：v5 使用 CSS-in-JS，默认无需 less 配置；如需主题自定义可结合 Token 系统与 `ConfigProvider`。
 
