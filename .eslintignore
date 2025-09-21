@@ -1,0 +1,8 @@
+# 仓库级 ESLint 忽略
+node_modules
+dist
+out
+desktop/dist
+desktop/out
+**/dist
+**/out

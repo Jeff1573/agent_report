@@ -1,7 +1,7 @@
 {
   "name": "mindforge-root",
   "private": true,
-  "engines": { "node": ">=20 <21" },
+  "engines": { "node": ">=22 <23" },
   "workspaces": [
     "packages/*",
     "desktop"

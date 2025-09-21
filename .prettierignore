@@ -1,0 +1,10 @@
+# 说明：仓库级 Prettier 忽略清单
+node_modules
+dist
+out
+.gitignore
+pnpm-lock.yaml
+LICENSE.md
+tsconfig.json
+tsconfig.*.json
+

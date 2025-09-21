@@ -1,0 +1,6 @@
+# 说明：仓库级 Prettier 配置，仅定义通用格式化规则。
+singleQuote: true
+semi: false
+printWidth: 100
+trailingComma: none
+

@@ -20,6 +20,7 @@ function createWindow(): void {
       sandbox: false
     }
   })
+  console.log('mainWindow created');
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
