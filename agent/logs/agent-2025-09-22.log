@@ -1,0 +1,28 @@
+{"time":"2025-09-22T02:36:42.298Z","level":"info","msg":"Effective configuration:","args":["Effective configuration:"],"pid":29492,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T02:36:42.302Z","level":"info","msg":"  OPENAI_BASE_URL:","args":["  OPENAI_BASE_URL:","[provided]"],"pid":29492,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T02:36:42.303Z","level":"info","msg":"  OPENAI_API_KEY:","args":["  OPENAI_API_KEY:","[provided]"],"pid":29492,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T02:36:42.303Z","level":"info","msg":"  OPENAI_MODEL:","args":["  OPENAI_MODEL:","[empty]"],"pid":29492,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T02:36:42.303Z","level":"info","msg":"  OPENAI_STREAM_USAGE:","args":["  OPENAI_STREAM_USAGE:",false],"pid":29492,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T02:37:05.739Z","level":"info","msg":"Effective configuration:","args":["Effective configuration:"],"pid":30644,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T02:37:05.743Z","level":"info","msg":"  OPENAI_BASE_URL:","args":["  OPENAI_BASE_URL:","https://www.88code.org/openai/v1"],"pid":30644,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T02:37:05.743Z","level":"info","msg":"  OPENAI_API_KEY:","args":["  OPENAI_API_KEY:","ms-ffbb2214-56ff-432b-9de4-3f2ee641677b"],"pid":30644,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T02:37:05.743Z","level":"info","msg":"  OPENAI_MODEL:","args":["  OPENAI_MODEL:",""],"pid":30644,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T02:37:05.744Z","level":"info","msg":"  OPENAI_STREAM_USAGE:","args":["  OPENAI_STREAM_USAGE:",false],"pid":30644,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T02:37:24.118Z","level":"info","msg":"Effective configuration:","args":["Effective configuration:"],"pid":25188,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T02:37:24.121Z","level":"info","msg":"  OPENAI_BASE_URL:","args":["  OPENAI_BASE_URL:","https://www.88code.org/openai/v1"],"pid":25188,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T02:37:24.122Z","level":"info","msg":"  OPENAI_API_KEY:","args":["  OPENAI_API_KEY:","ms-ffbb2214-56ff-432b-9de4-3f2ee641677b"],"pid":25188,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T02:37:24.122Z","level":"info","msg":"  OPENAI_MODEL:","args":["  OPENAI_MODEL:",""],"pid":25188,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T02:37:24.122Z","level":"info","msg":"  OPENAI_STREAM_USAGE:","args":["  OPENAI_STREAM_USAGE:",false],"pid":25188,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T02:37:36.600Z","level":"info","msg":"Effective configuration:","args":["Effective configuration:"],"pid":33648,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T02:37:36.604Z","level":"info","msg":"  OPENAI_BASE_URL:","args":["  OPENAI_BASE_URL:","https://www.88code.org/openai/v1"],"pid":33648,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T02:37:36.604Z","level":"info","msg":"  OPENAI_API_KEY:","args":["  OPENAI_API_KEY:","ms-ffbb2214-56ff-432b-9de4-3f2ee641677b"],"pid":33648,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T02:37:36.605Z","level":"info","msg":"  OPENAI_MODEL:","args":["  OPENAI_MODEL:","Qwen/Qwen3-Coder-480B-A35B-Instruct"],"pid":33648,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T02:37:36.605Z","level":"info","msg":"  OPENAI_STREAM_USAGE:","args":["  OPENAI_STREAM_USAGE:",false],"pid":33648,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T02:37:54.562Z","level":"info","msg":"Effective configuration:","args":["Effective configuration:"],"pid":26412,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T02:37:54.566Z","level":"info","msg":"  OPENAI_BASE_URL:","args":["  OPENAI_BASE_URL:","https://www.88code.org/openai/v1"],"pid":26412,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T02:37:54.566Z","level":"info","msg":"  OPENAI_API_KEY:","args":["  OPENAI_API_KEY:","ms-ffbb2214-56ff-432b-9de4-3f2ee641677b"],"pid":26412,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T02:37:54.567Z","level":"info","msg":"  OPENAI_MODEL:","args":["  OPENAI_MODEL:","Qwen/Qwen3-Coder-480B-A35B-Instruct"],"pid":26412,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T02:37:54.567Z","level":"info","msg":"  OPENAI_STREAM_USAGE:","args":["  OPENAI_STREAM_USAGE:",false],"pid":26412,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T03:00:47.296Z","level":"info","msg":"invoke content:","args":["invoke content:","你好！我是一个基于人工智能技术开发的大型语言模型，能够理解和生成自然语言，帮助用户解答问题、创作文字、进行逻辑推理等。"],"pid":23072,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T03:00:48.531Z","level":"info","msg":"history content:","args":["history content:","TypeScript 优秀！"],"pid":23072,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T03:00:49.613Z","level":"info","msg":"\nstream done. total:","args":["\nstream done. total:",47],"pid":23072,"hostname":"PC-202211201523","context":{}}

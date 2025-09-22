@@ -4,7 +4,8 @@
   "engines": { "node": ">=22 <23" },
   "workspaces": [
     "packages/*",
-    "desktop"
+    "desktop",
+    "agent"
   ],
   "packageManager": "npm@10.9.2",
   "scripts": {
