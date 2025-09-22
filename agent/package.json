@@ -16,8 +16,12 @@
     "tsx": "^4.19.2"
   },
   "dependencies": {
+    "@langchain/community": "^0.3.56",
     "@langchain/core": "^0.3.77",
+    "@langchain/langgraph": "^0.4.9",
     "@langchain/openai": "^0.6.13",
-    "dotenv": "^17.2.2"
+    "@langchain/tavily": "^0.1.5",
+    "dotenv": "^16.4.5",
+    "duck-duck-scrape": "^2.2.7"
   }
 }

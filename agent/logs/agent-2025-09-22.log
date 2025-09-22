@@ -26,3 +26,15 @@
 {"time":"2025-09-22T03:00:47.296Z","level":"info","msg":"invoke content:","args":["invoke content:","你好！我是一个基于人工智能技术开发的大型语言模型，能够理解和生成自然语言，帮助用户解答问题、创作文字、进行逻辑推理等。"],"pid":23072,"hostname":"PC-202211201523","context":{}}
 {"time":"2025-09-22T03:00:48.531Z","level":"info","msg":"history content:","args":["history content:","TypeScript 优秀！"],"pid":23072,"hostname":"PC-202211201523","context":{}}
 {"time":"2025-09-22T03:00:49.613Z","level":"info","msg":"\nstream done. total:","args":["\nstream done. total:",47],"pid":23072,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T06:11:56.524Z","level":"info","msg":"input:","args":["input:","使用 DuckDuckGo 搜索“LangChain JS ReAct Agent 文档”，并给出 1 行要点。"],"pid":30100,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T06:11:57.780Z","level":"info","msg":"\n[tool_calls]","args":["\n[tool_calls]",[{"name":"duckduckgo-search","args":{"input":"LangChain JS ReAct Agent 文档"},"type":"tool_call","id":"call_b4d77e9e86b544319cb54996"}]],"pid":30100,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T06:12:02.572Z","level":"info","msg":"\nstream done.","args":["\nstream done."],"pid":30100,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T06:13:35.658Z","level":"info","msg":"input:","args":["input:","使用 DuckDuckGo 搜索“LangChain JS ReAct Agent 文档”，并给出 1 行要点。"],"pid":46004,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T06:13:36.856Z","level":"info","msg":"\n[tool_calls]","args":["\n[tool_calls]",[{"name":"duckduckgo-search","args":{"input":"LangChain JS ReAct Agent 文档"},"type":"tool_call","id":"call_82ea37526b534dcf94d6c821"}]],"pid":46004,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T06:13:41.029Z","level":"info","msg":"\nstream done.","args":["\nstream done."],"pid":46004,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T06:29:16.465Z","level":"info","msg":"input:","args":["input:","使用 Tavily 搜索“LangChain JS ReAct Agent 文档”，并给出 1 行要点（附权威来源）。"],"pid":22900,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T06:29:17.727Z","level":"info","msg":"\n[tool_calls]","args":["\n[tool_calls]",[{"name":"tavily_search","args":{"query":"LangChain JS ReAct Agent 文档"},"type":"tool_call","id":"call_4f4c7705c93b468a85a884de"}]],"pid":22900,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T06:29:21.881Z","level":"info","msg":"\nstream done.","args":["\nstream done."],"pid":22900,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T06:30:18.753Z","level":"info","msg":"input:","args":["input:","使用 Tavily 搜索“今天的日期”，并返回结果。"],"pid":11920,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T06:30:19.918Z","level":"info","msg":"\n[tool_calls]","args":["\n[tool_calls]",[{"name":"tavily_search","args":{"query":"今天的日期"},"type":"tool_call","id":"call_c577eb01e960432993cd0e6a"}]],"pid":11920,"hostname":"PC-202211201523","context":{}}
+{"time":"2025-09-22T06:30:23.278Z","level":"info","msg":"\nstream done.","args":["\nstream done."],"pid":11920,"hostname":"PC-202211201523","context":{}}
