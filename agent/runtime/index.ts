@@ -10,22 +10,32 @@ import { getDefaultTools } from '../tools/registry.js';
 import { logger } from '../utils/logger.js';
 import type { StreamEvent, InteractionSegment, Summarizer } from '../stream/types.js';
 import { observeValues, observeEvents } from '../stream/observer.js';
+import { createCheckpointer, type PersistenceMode } from './persistence.js';
+import { CHECKPOINT_MODE, THREAD_ID_FALLBACK } from '../config/env.js';
 import { defaultSummarizer } from '../stream/summarizers.js';
 
 export interface RuntimeConfig {
+  /** 自定义工具集（默认注册表） */
   tools?: unknown[];
+  /** 回合结束自动概括器 */
   summarizer?: Summarizer;
+  /** 持久化模式：memory | postgres（默认取环境变量 CHECKPOINT_MODE） */
+  persistenceMode?: PersistenceMode;
 }
 
 export interface StreamOptions {
-  summary?: boolean; // 是否在每个回合结束后打印概括
+  /** 是否在每回合结束后输出概括 */
+  summary?: boolean;
+  /** 可选：指定线程 ID 以启用记忆回放 */
+  threadId?: string;
 }
 
 export interface AgentRuntime {
   runOnce(input: string): Promise<string>;
   streamValues(input: string, options?: StreamOptions): AsyncGenerator<StreamEvent>;
   streamEvents(input: string, options?: StreamOptions): AsyncGenerator<StreamEvent>;
-  onEvent(handler: (e: StreamEvent) => void): () => void; // 订阅事件，返回取消订阅函数
+  /** 订阅内部标准化事件，返回取消订阅函数 */
+  onEvent(handler: (e: StreamEvent) => void): () => void;
 }
 
 /**
@@ -81,11 +91,14 @@ class SegmentAccumulator {
 }
 
 /** 创建运行时实例 */
-export function createAgentRuntime(config: RuntimeConfig = {}): AgentRuntime {
+export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<AgentRuntime> {
   const llm = makeChatModel();
   const tools = Array.isArray(config.tools) && config.tools.length > 0 ? config.tools : getDefaultTools();
+  const persistenceMode: PersistenceMode = config.persistenceMode ?? (CHECKPOINT_MODE as PersistenceMode) ?? 'memory';
+  // 依据环境动态创建 checkpointer（MemorySaver / PostgresSaver）
+  const checkpointer = await createCheckpointer(persistenceMode);
   // 这里做宽松断言以兼容不同工具实现（ServerTool/ClientTool/ToolNode），避免类型收窄导致的构建失败
-  const agent = createReactAgent({ llm: llm as any, tools: tools as any });
+  const agent = createReactAgent({ llm: llm as any, tools: tools as any, checkpointSaver: checkpointer as any });
   const summarizer: Summarizer = config.summarizer ?? defaultSummarizer;
 
   const listeners = new Set<(e: StreamEvent) => void>();
@@ -121,13 +134,19 @@ export function createAgentRuntime(config: RuntimeConfig = {}): AgentRuntime {
 
   async function* streamValues(input: string, options?: StreamOptions): AsyncGenerator<StreamEvent> {
     const inputs = { messages: [{ role: 'user', content: input }] };
-    const gen = observeValues(agent, inputs);
+    const threadId = (options?.threadId && typeof options.threadId === 'string' && options.threadId.trim())
+      ? options.threadId.trim()
+      : (THREAD_ID_FALLBACK || undefined);
+    const gen = observeValues(agent, inputs, threadId ? { configurable: { thread_id: threadId } } : undefined);
     yield* pipeWithSummary(gen, options);
   }
 
   async function* streamEvents(input: string, options?: StreamOptions): AsyncGenerator<StreamEvent> {
     const inputs = { messages: [{ role: 'user', content: input }] };
-    const gen = observeEvents(agent, inputs);
+    const threadId = (options?.threadId && typeof options.threadId === 'string' && options.threadId.trim())
+      ? options.threadId.trim()
+      : (THREAD_ID_FALLBACK || undefined);
+    const gen = observeEvents(agent, inputs, threadId ? { configurable: { thread_id: threadId } } : undefined);
     yield* pipeWithSummary(gen, options);
   }
 

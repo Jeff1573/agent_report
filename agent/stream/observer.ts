@@ -6,6 +6,16 @@
  */
 import type { StreamEvent, ModelTokenEvent, AssistantMessageEvent, ToolCallEvent, ToolResultEvent, RoundEndEvent } from './types.js';
 
+/**
+ * 运行时配置片段（与 LangGraph RunnableConfig 的交集）
+ * 仅保留我们需要的 configurable.thread_id 与流式选项/版本标记。
+ */
+export interface StreamConfigLike {
+  configurable?: { thread_id?: string };
+  streamMode?: 'values';
+  version?: 'v2';
+}
+
 /** 将 content（string 或富文本数组）转为字符串 */
 function contentToString(content: unknown): string {
   if (typeof content === 'string') return content;
@@ -24,8 +34,20 @@ function contentToString(content: unknown): string {
 /**
  * values 模式：从 `agent.stream(inputs, { streamMode: 'values' })` 转为统一事件
  */
-export async function* observeValues(agent: any, inputs: any): AsyncGenerator<StreamEvent> {
-  const stream = await agent.stream(inputs, { streamMode: 'values' });
+export async function* observeValues(agent: any, inputs: any, cfg?: StreamConfigLike): AsyncGenerator<StreamEvent> {
+  // 统一合并配置：优先调用方传入的 thread_id / 其他标记
+  const options: StreamConfigLike = {
+    streamMode: 'values',
+    ...(cfg ?? {}),
+    configurable: {
+      ...(cfg?.configurable ?? {}),
+      // 收窄类型：仅当 thread_id 为字符串时才下发
+      ...(typeof cfg?.configurable?.thread_id === 'string' && cfg.configurable.thread_id
+        ? { thread_id: cfg.configurable.thread_id }
+        : {}),
+    },
+  };
+  const stream = await agent.stream(inputs, options as any);
   for await (const chunk of stream as AsyncIterable<any>) {
     const messages = (chunk as any)?.messages;
     if (!Array.isArray(messages) || messages.length === 0) continue;
@@ -66,8 +88,19 @@ export async function* observeValues(agent: any, inputs: any): AsyncGenerator<St
 /**
  * events v2 模式：从 `agent.streamEvents(inputs, { version: 'v2' })` 转为统一事件
  */
-export async function* observeEvents(agent: any, inputs: any): AsyncGenerator<StreamEvent> {
-  const eventStream: AsyncIterable<any> = await agent.streamEvents(inputs, { version: 'v2' });
+export async function* observeEvents(agent: any, inputs: any, cfg?: StreamConfigLike): AsyncGenerator<StreamEvent> {
+  // 在 events v2 模式下，同样携带 configurable.thread_id 以启用持久化线程回放
+  const options: StreamConfigLike = {
+    version: 'v2',
+    ...(cfg ?? {}),
+    configurable: {
+      ...(cfg?.configurable ?? {}),
+      ...(typeof cfg?.configurable?.thread_id === 'string' && cfg.configurable.thread_id
+        ? { thread_id: cfg.configurable.thread_id }
+        : {}),
+    },
+  };
+  const eventStream: AsyncIterable<any> = await agent.streamEvents(inputs, options as any);
   let accText = '';
   for await (const item of eventStream) {
     const event = (item as any)?.event as string | undefined;

@@ -32,3 +32,11 @@ export const CUSTOM_AUTH_VALUE = process.env.CUSTOM_AUTH_VALUE || '';
 export const LOG_LEVEL = (process.env.LOG_LEVEL || 'info').toLowerCase();
 export const LOG_DIR = process.env.LOG_DIR || path.resolve(process.cwd(), 'logs');
 export const LOG_COLOR = process.env.LOG_COLOR || 'auto'; // auto | true | false
+
+// LangGraph 持久化（Checkpointer）相关配置
+// - CHECKPOINT_MODE: memory | postgres （默认 memory）
+// - CHECKPOINT_POSTGRES_URL: Postgres 连接串（postgres 模式必填）
+// - THREAD_ID_FALLBACK: 若 CLI 未显式传入 threadId，可用此值兜底
+export const CHECKPOINT_MODE = (process.env.CHECKPOINT_MODE || 'memory').toLowerCase();
+export const CHECKPOINT_POSTGRES_URL = process.env.CHECKPOINT_POSTGRES_URL || process.env.POSTGRES_URL || '';
+export const THREAD_ID_FALLBACK = process.env.THREAD_ID || process.env.LG_THREAD_ID || '';

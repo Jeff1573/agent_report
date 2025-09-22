@@ -1,8 +1,9 @@
 // agent/index.ts
 // 入口：调用运行时封装，支持 values / events 模式与交互概括
 
-import { logger } from './utils/logger.js';
+import { logger, createLogger } from './utils/logger.js';
 import { createAgentRuntime } from './runtime/index.js';
+import { THREAD_ID_FALLBACK } from './config/env.js';
 
 type Mode = 'values' | 'events';
 
@@ -10,6 +11,7 @@ function parseCli(argv: string[]) {
   const args = [...argv];
   let mode: Mode | undefined;
   let summary: boolean | undefined;
+  let threadId: string | undefined;
   const rest: string[] = [];
   const isOn = (v: string) => !(v.toLowerCase() === 'off' || v.toLowerCase() === 'false' || v === '0');
 
@@ -27,6 +29,11 @@ function parseCli(argv: string[]) {
       summary = isOn(String(v));
       continue;
     }
+    if (a === '--thread' || a === '-t' || a.startsWith('--thread=')) {
+      const v = a.includes('=') ? a.split('=')[1] : args[++i];
+      if (typeof v === 'string' && v.trim()) threadId = v.trim();
+      continue;
+    }
     rest.push(a);
   }
 
@@ -42,15 +49,19 @@ function parseCli(argv: string[]) {
     }
   }
 
-  return { mode: mode ?? 'values', summary: summary ?? true, input: rest.join(' ').trim() };
+  return { mode: mode ?? 'values', summary: summary ?? true, threadId, input: rest.join(' ').trim() };
 }
 
 async function main() {
-  const { mode, summary, input } = parseCli(process.argv.slice(2));
+  const { mode, summary, threadId: cliThreadId, input } = parseCli(process.argv.slice(2));
   const query = input || '使用 Tavily 搜索“RAG是什么？”，并返回结果。';
-  const runtime = createAgentRuntime();
-  logger.info(`mode=${mode} summary=${summary}`);
-  logger.info('input:', query);
+  const runtime = await createAgentRuntime();
+  const threadId = (cliThreadId && cliThreadId.trim()) || (THREAD_ID_FALLBACK && THREAD_ID_FALLBACK.trim()) || undefined;
+
+  const log = threadId ? createLogger({ threadId }) : logger;
+  log.info(`mode=${mode} summary=${summary}`);
+  if (threadId) log.info(`threadId=${threadId}`);
+  log.info('input:', query);
 
   const print = (e: any) => {
     switch (e.type) {
@@ -61,13 +72,13 @@ async function main() {
         process.stdout.write(e.content);
         break;
       case 'tool-call':
-        logger.info('[tool-call]', { name: e.name, args: e.args });
+        log.info('[tool-call]', { name: e.name, args: e.args });
         break;
       case 'tool-result':
-        logger.info('[tool-result]', { name: e.name, output: e.output });
+        log.info('[tool-result]', { name: e.name, output: e.output });
         break;
       case 'error':
-        logger.error(e.error);
+        log.error(e.error);
         break;
       case 'round-end':
         process.stdout.write('\n');
@@ -78,16 +89,16 @@ async function main() {
   };
 
   if (mode === 'events') {
-    for await (const ev of runtime.streamEvents(query, { summary })) {
+    for await (const ev of runtime.streamEvents(query, { summary, threadId })) {
       print(ev);
     }
   } else {
-    for await (const ev of runtime.streamValues(query, { summary })) {
+    for await (const ev of runtime.streamValues(query, { summary, threadId })) {
       print(ev);
     }
   }
 
-  logger.info('stream done.');
+  log.info('stream done.');
 }
 
 main().catch((e) => {
