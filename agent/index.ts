@@ -69,7 +69,8 @@ async function main() {
         process.stdout.write(e.token);
         break;
       case 'assistant-message':
-        process.stdout.write(e.content);
+        // process.stdout.write(e.content);
+        log.warn('[assistant-message]', { content: e.content });
         break;
       case 'tool-call':
         log.info('[tool-call]', { name: e.name, args: e.args });
