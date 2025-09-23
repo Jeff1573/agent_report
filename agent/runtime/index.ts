@@ -98,7 +98,12 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
   // 依据环境动态创建 checkpointer（MemorySaver / PostgresSaver）
   const checkpointer = await createCheckpointer(persistenceMode);
   // 这里做宽松断言以兼容不同工具实现（ServerTool/ClientTool/ToolNode），避免类型收窄导致的构建失败
-  const agent = createReactAgent({ llm: llm as any, tools: tools as any, checkpointSaver: checkpointer as any });
+  const agent = createReactAgent({
+    llm: llm as any,
+    tools: tools as any,
+    checkpointSaver: checkpointer as any,
+    version: 'v2',
+  });
   const summarizer: Summarizer = config.summarizer ?? defaultSummarizer;
 
   const listeners = new Set<(e: StreamEvent) => void>();

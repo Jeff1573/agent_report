@@ -1,6 +1,6 @@
 // src/llm/factory.ts
-import { ChatOpenAI } from "@langchain/openai";
-import type { ZodTypeAny } from "zod";
+import { ChatOpenAI, ChatOpenAIFields } from '@langchain/openai'
+import type { ZodTypeAny } from 'zod'
 import {
   OPENAI_BASE_URL,
   OPENAI_API_KEY,
@@ -9,28 +9,27 @@ import {
   TIMEOUT_MS,
   MAX_RETRIES,
   CUSTOM_AUTH_HEADER,
-  CUSTOM_AUTH_VALUE,
-} from "../config/env.js";
+  CUSTOM_AUTH_VALUE
+} from '../config/env.js'
 
 export type ChatModelOverrides = Partial<{
-  model: string;
-  temperature: number;
-  timeout: number;
-  maxRetries: number;
-  streamUsage: boolean;
-  baseURL: string;
-}>;
+  model: string
+  temperature: number
+  timeout: number
+  maxRetries: number
+  streamUsage: boolean
+  baseURL: string
+}>
 
 /** 统一创建 ChatOpenAI（OpenAI 协议兼容） */
-export function makeChatModel(overrides: ChatModelOverrides = {}) {
+export function makeChatModel(overrides: ChatOpenAIFields & ChatModelOverrides = {}) {
   // 1) 处理鉴权：优先自定义头；否则走标准 Bearer（OPENAI_API_KEY）
   const defaultHeaders =
     CUSTOM_AUTH_HEADER && CUSTOM_AUTH_VALUE
       ? { [CUSTOM_AUTH_HEADER]: CUSTOM_AUTH_VALUE }
       : OPENAI_API_KEY
-      ? { Authorization: `Bearer ${OPENAI_API_KEY}` }
-      : {};
-
+        ? { Authorization: `Bearer ${OPENAI_API_KEY}` }
+        : {}
 
   // 2) 实例化模型（可随时替换 baseURL / model）
   const llm = new ChatOpenAI({
@@ -43,11 +42,11 @@ export function makeChatModel(overrides: ChatModelOverrides = {}) {
     // 关键：自定义 baseURL / headers 走 configuration
     configuration: {
       baseURL: overrides.baseURL ?? OPENAI_BASE_URL,
-      defaultHeaders,
-    },
-  });
+      defaultHeaders
+    }
+  })
 
-  return llm;
+  return llm
 }
 
 /**
@@ -69,14 +68,14 @@ export function makeChatModel(overrides: ChatModelOverrides = {}) {
  */
 export function makeStructuredChatModel<S extends ZodTypeAny>(
   schema: S,
-  options?: Parameters<ChatOpenAI["withStructuredOutput"]>[1],
+  options?: Parameters<ChatOpenAI['withStructuredOutput']>[1],
   overrides: ChatModelOverrides = {}
 ) {
   // 复用既有工厂，确保 baseURL/headers 等配置一致
-  const llm = makeChatModel(overrides);
+  const llm = makeChatModel(overrides)
   const merged = { strict: true, ...(options ?? {}) } as Parameters<
-    ChatOpenAI["withStructuredOutput"]
-  >[1];
+    ChatOpenAI['withStructuredOutput']
+  >[1]
   // 直接返回绑定了结构化输出的 Runnable（类型由 schema 推断）
-  return llm.withStructuredOutput(schema, merged);
+  return llm.withStructuredOutput(schema, merged)
 }

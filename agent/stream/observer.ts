@@ -123,7 +123,9 @@ export async function* observeEvents(agent: any, inputs: any, cfg?: StreamConfig
   };
   const eventStream: AsyncIterable<any> = await agent.streamEvents(inputs, options as any);
   let accText = '';
+  let emittedAssistant = false;
   for await (const item of eventStream) {
+    console.log("item", JSON.stringify(item))
     const event = (item as any)?.event as string | undefined;
     const data = (item as any)?.data as any;
     if (!event) continue;
@@ -159,6 +161,7 @@ export async function* observeEvents(agent: any, inputs: any, cfg?: StreamConfig
         };
         yield msgEv;
         accText = '';
+        emittedAssistant = true;
       }
       // 回合结束：在模型完成后触发；不设顶层 role，采用 meta.finalRole
       const endEv: RoundEndEvent = { type: 'round-end', ts: Date.now(), meta: { finalRole: 'assistant' } };
@@ -182,6 +185,39 @@ export async function* observeEvents(agent: any, inputs: any, cfg?: StreamConfig
       const ev: ToolResultEvent = { type: 'tool-result', ts: Date.now(), role: 'tool', name, output };
       yield ev;
       continue;
+    }
+
+    // 5) 链路结束兜底：某些提供商可能不发 on_chat_model_end，但会在 on_chain_end 提供完整消息
+    if (event === 'on_chain_end' && !emittedAssistant) {
+      try {
+        const messages = (data?.output?.messages || data?.input?.messages) as any[] | undefined;
+        const last = Array.isArray(messages) && messages.length > 0 ? messages[messages.length - 1] : undefined;
+        const roleHint: string | undefined = (last?.type || last?._getType?.() || last?.role) as any;
+        const content = last?.content ?? '';
+        const text = contentToString(content);
+        // 仅当最后一条看起来是 AI/assistant 时才兜底输出，避免把用户问题误当作助手输出
+        if (text && (roleHint === 'ai' || roleHint === 'assistant')) {
+          const msgEv: AssistantMessageEvent = {
+            type: 'assistant-message',
+            ts: Date.now(),
+            role: 'assistant',
+            content: text,
+          };
+          yield msgEv;
+          emittedAssistant = true;
+          const endEv: RoundEndEvent = { type: 'round-end', ts: Date.now(), meta: { finalRole: 'assistant' } };
+          yield endEv;
+          continue;
+        }
+      } catch {}
+    }
+
+    // 调试：输出未处理的事件名与数据键，辅助定位不同提供商/版本的差异
+    if (String(process.env.DEBUG_STREAM_EVENTS || '').toLowerCase() === 'true') {
+      try {
+        // eslint-disable-next-line no-console
+        console.warn('[observeEvents:unhandled]', event, Object.keys(data || {}));
+      } catch {}
     }
   }
 }
