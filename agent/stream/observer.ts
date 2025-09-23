@@ -4,6 +4,7 @@
  * - 将 LangGraph 的两种流式模式（values / events v2）适配为统一的内部事件流（见 types.ts）。
  * - 仅做“提取与归一化”，不承担概括与持久化；概括由 runtime 调用方基于事件自行完成。
  */
+import { logger } from '../utils/logger.js';
 import type { StreamEvent, ModelTokenEvent, AssistantMessageEvent, ToolCallEvent, ToolResultEvent, RoundEndEvent } from './types.js';
 
 /**
@@ -53,6 +54,7 @@ export async function* observeValues(agent: any, inputs: any, cfg?: StreamConfig
     if (!Array.isArray(messages) || messages.length === 0) continue;
     const msg = messages[messages.length - 1] as any;
 
+    logger.info('[observeValues]', { msg });
     // 1) 助手自然语言
     if (msg?.content) {
       const text = contentToString(msg.content);

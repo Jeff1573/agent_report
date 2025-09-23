@@ -1,5 +1,6 @@
 // src/llm/factory.ts
 import { ChatOpenAI } from "@langchain/openai";
+import type { ZodTypeAny } from "zod";
 import {
   OPENAI_BASE_URL,
   OPENAI_API_KEY,
@@ -47,4 +48,35 @@ export function makeChatModel(overrides: ChatModelOverrides = {}) {
   });
 
   return llm;
+}
+
+/**
+ * 创建一个已绑定结构化输出（withStructuredOutput）的可运行体。
+ *
+ * 用法：在调用处定义 Zod Schema，然后调用本函数获取一个可直接 `invoke()`
+ * 的 Runnable，返回值即为按 Schema 解析后的强类型对象。
+ *
+ * 约束与边界：
+ * - 仅适用于支持结构化输出/JSON 模式/函数调用的模型与端点。
+ * - 对可空字段请使用 `z.nullable(...)`；Schema 应仅包含可 JSON 表达的类型。
+ * - 如目标“兼容”端点不支持某些特性（如 JSON 模式），可通过 `options.method` 调整或在上层做兜底。
+ *
+ * @template S Zod Schema 类型
+ * @param schema Zod Schema（公共 API：请仅使用可 JSON 表达类型）
+ * @param options 结构化输出选项（`name`/`strict`/`method`/`includeRaw` 等），默认 `{ strict: true }`
+ * @param overrides 覆盖 `makeChatModel` 的基础配置（model/baseURL/timeout 等）
+ * @returns 返回一个可 `invoke()` 的 Runnable，其输出类型由 Schema 推断
+ */
+export function makeStructuredChatModel<S extends ZodTypeAny>(
+  schema: S,
+  options?: Parameters<ChatOpenAI["withStructuredOutput"]>[1],
+  overrides: ChatModelOverrides = {}
+) {
+  // 复用既有工厂，确保 baseURL/headers 等配置一致
+  const llm = makeChatModel(overrides);
+  const merged = { strict: true, ...(options ?? {}) } as Parameters<
+    ChatOpenAI["withStructuredOutput"]
+  >[1];
+  // 直接返回绑定了结构化输出的 Runnable（类型由 schema 推断）
+  return llm.withStructuredOutput(schema, merged);
 }

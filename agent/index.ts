@@ -53,7 +53,7 @@ function parseCli(argv: string[]) {
 }
 
 async function main() {
-  const { mode, summary, threadId: cliThreadId, input } = parseCli(process.argv.slice(2));
+  const { mode, summary, threadId: cliThreadId = "test-thread-001", input } = parseCli(process.argv.slice(2));
   const query = input || '使用 Tavily 搜索“RAG是什么？”，并返回结果。';
   const runtime = await createAgentRuntime();
   const threadId = (cliThreadId && cliThreadId.trim()) || (THREAD_ID_FALLBACK && THREAD_ID_FALLBACK.trim()) || undefined;
@@ -95,7 +95,8 @@ async function main() {
     }
   } else {
     for await (const ev of runtime.streamValues(query, { summary, threadId })) {
-      print(ev);
+      // log.info('[streamValues]', { ev });
+      // print(ev);
     }
   }
 

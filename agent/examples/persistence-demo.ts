@@ -5,6 +5,7 @@
  * - 运行方式：npm run demo:persistence -w ./agent
  */
 import { createAgentRuntime } from '../runtime/index.js';
+import { logger } from '../utils/logger.js';
 
 async function run() {
   const threadId = process.env.THREAD_ID || 'demo-thread-001';
@@ -21,6 +22,7 @@ async function run() {
   const q2 = '我叫什么名字？尽量简短作答。';
   process.stdout.write('\n\n[Round 2] ' + q2 + '\n');
   for await (const ev of runtime.streamValues(q2, { summary: false, threadId })) {
+    logger.info(`[ai response]：`,ev, "\n");
     if (ev.type === 'assistant-message') process.stdout.write(ev.content);
   }
 
