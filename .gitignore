@@ -6,4 +6,7 @@ dist/
 out/
 *.log
 agent/logs/*
-*.env
+.env
+.env.local
+.env.*.local
+!.env.example

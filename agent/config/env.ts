@@ -40,3 +40,16 @@ export const LOG_COLOR = process.env.LOG_COLOR || 'auto'; // auto | true | false
 export const CHECKPOINT_MODE = (process.env.CHECKPOINT_MODE || 'memory').toLowerCase();
 export const CHECKPOINT_POSTGRES_URL = process.env.CHECKPOINT_POSTGRES_URL || process.env.POSTGRES_URL || '';
 export const THREAD_ID_FALLBACK = process.env.THREAD_ID || process.env.LG_THREAD_ID || '';
+
+// Tavily API Key（搜索工具）
+export const TAVILY_API_KEY = process.env.TAVILY_API_KEY || '';
+
+// RAG 向量嵌入配置
+export const KB_EMBED_PROVIDER = (process.env.KB_EMBED_PROVIDER || 'openai').toLowerCase();
+export const KB_EMBED_MODEL = process.env.KB_EMBED_MODEL || '';
+export const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || '';
+
+// 强制工具调用配置（仅 demo 脚本支持）
+export const FORCE_TOOL_NAME = process.env.FORCE_TOOL_NAME || '';
+export const FORCE_TOOL_CHOICE_STYLE = process.env.FORCE_TOOL_CHOICE_STYLE || 'tool';
+

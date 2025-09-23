@@ -11,6 +11,11 @@ import { tool } from "@langchain/core/tools";
 // 简易 logger
 const log = (...args: any[]) => console.log(new Date().toISOString(), "[INFO]", ...args);
 
+log(process.env.OPENAI_MODEL, "RAG Agent Demo");
+log("使用的 OpenAI Base URL:", process.env.OPENAI_BASE_URL);
+log("使用的 Google API Key:", process.env.GOOGLE_API_KEY ? "✔️ 已设置" : "❌ 未设置");
+
+// 主函数
 async function main() {
   // 1) 连接 OpenAI 兼容 LLM —— 关键：关闭模型级 streaming（避免不完整的“流式函数调用”片段）
   const baseLLM = new ChatOpenAI({
