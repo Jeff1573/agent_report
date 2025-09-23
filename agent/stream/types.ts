@@ -14,15 +14,27 @@ export type StreamEventType =
   | 'round-end' // 一轮 Agent↔LLM 交互结束（用于触发概括）
   | 'error'; // 运行时错误
 
+import type { UnifiedRole } from "../llm/message-role.js";
+
 /** 事件公共元信息 */
 export interface StreamEventBase {
   type: StreamEventType;
   ts: number; // 事件时间戳（ms）
+  /**
+   * 统一角色（可选）。
+   * - model-token → 'assistant'
+   * - assistant-message → 'assistant'
+   * - tool-call/tool-result → 'tool'
+   * - round-end/error → 留空或 'unknown'
+   */
+  role?: UnifiedRole;
   meta?: {
     runId?: string;
     threadId?: string;
     model?: string;
     callId?: string;
+    /** 本回合最终呈现的一方（例如在 round-end 上提供） */
+    finalRole?: UnifiedRole;
   };
 }
 
@@ -85,4 +97,3 @@ export interface InteractionSegment {
 export interface Summarizer {
   summarize(segment: InteractionSegment): Promise<string> | string;
 }
-

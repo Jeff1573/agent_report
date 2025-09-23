@@ -69,7 +69,6 @@ async function main() {
         process.stdout.write(e.token);
         break;
       case 'assistant-message':
-        // process.stdout.write(e.content);
         log.warn('[assistant-message]', { content: e.content });
         break;
       case 'tool-call':
@@ -96,7 +95,7 @@ async function main() {
   } else {
     for await (const ev of runtime.streamValues(query, { summary, threadId })) {
       // log.info('[streamValues]', { ev });
-      // print(ev);
+      print(ev);
     }
   }
 

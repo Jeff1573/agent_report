@@ -4,7 +4,7 @@
  * - 将 LangGraph 的两种流式模式（values / events v2）适配为统一的内部事件流（见 types.ts）。
  * - 仅做“提取与归一化”，不承担概括与持久化；概括由 runtime 调用方基于事件自行完成。
  */
-import { logger } from '../utils/logger.js';
+import { getUnifiedRole, isMessageChunk, isToolLikeMessage } from '../llm/message-role.js';
 import type { StreamEvent, ModelTokenEvent, AssistantMessageEvent, ToolCallEvent, ToolResultEvent, RoundEndEvent } from './types.js';
 
 /**
@@ -53,22 +53,39 @@ export async function* observeValues(agent: any, inputs: any, cfg?: StreamConfig
     const messages = (chunk as any)?.messages;
     if (!Array.isArray(messages) || messages.length === 0) continue;
     const msg = messages[messages.length - 1] as any;
+    const role = getUnifiedRole(msg);
 
-    logger.info('[observeValues]', { msg });
-    // 1) 助手自然语言
+    // 1) 工具结果（ToolMessage）：避免被误判为 assistant-message
+    if (role === 'tool' || isToolLikeMessage(msg)) {
+      const name: string = typeof msg?.name === 'string' ? msg.name : 'unknown-tool';
+      const outText = contentToString(msg?.content);
+      const ev: ToolResultEvent = {
+        type: 'tool-result',
+        ts: Date.now(),
+        role: 'tool',
+        name,
+        output: outText || msg?.content,
+        meta: msg?.tool_call_id ? { callId: String(msg.tool_call_id) } : undefined,
+      };
+      yield ev;
+      continue;
+    }
+
+    // 2) 助手自然语言
     if (msg?.content) {
       const text = contentToString(msg.content);
       if (text) {
         const ev: AssistantMessageEvent = {
           type: 'assistant-message',
           ts: Date.now(),
+          role: 'assistant',
           content: text,
         };
         yield ev;
       }
     }
 
-    // 2) 工具调用提示（若存在）
+    // 3) 工具调用提示（若存在）
     const toolCalls = Array.isArray(msg?.tool_calls) ? (msg.tool_calls as any[]) : [];
     for (const t of toolCalls) {
       const name = typeof t?.name === 'string' ? t.name : 'unknown-tool';
@@ -76,6 +93,7 @@ export async function* observeValues(agent: any, inputs: any, cfg?: StreamConfig
       const ev: ToolCallEvent = {
         type: 'tool-call',
         ts: Date.now(),
+        role: 'tool',
         name,
         args,
       };
@@ -83,7 +101,8 @@ export async function* observeValues(agent: any, inputs: any, cfg?: StreamConfig
     }
   }
 
-  const end: RoundEndEvent = { type: 'round-end', ts: Date.now() };
+  // 回合结束：不再设置顶层 role，改用 meta.finalRole 标注来源，避免被误渲染为消息
+  const end: RoundEndEvent = { type: 'round-end', ts: Date.now(), meta: { finalRole: 'assistant' } };
   yield end;
 }
 
@@ -115,7 +134,7 @@ export async function* observeEvents(agent: any, inputs: any, cfg?: StreamConfig
       const token = contentToString(chunk?.content ?? chunk);
       if (token) {
         accText += token;
-        const ev: ModelTokenEvent = { type: 'model-token', ts: Date.now(), token };
+        const ev: ModelTokenEvent = { type: 'model-token', ts: Date.now(), role: 'assistant', token };
         yield ev;
       }
       continue;
@@ -135,12 +154,14 @@ export async function* observeEvents(agent: any, inputs: any, cfg?: StreamConfig
         const msgEv: AssistantMessageEvent = {
           type: 'assistant-message',
           ts: Date.now(),
+          role: 'assistant',
           content: finalText,
         };
         yield msgEv;
         accText = '';
       }
-      const endEv: RoundEndEvent = { type: 'round-end', ts: Date.now() };
+      // 回合结束：在模型完成后触发；不设顶层 role，采用 meta.finalRole
+      const endEv: RoundEndEvent = { type: 'round-end', ts: Date.now(), meta: { finalRole: 'assistant' } };
       yield endEv;
       continue;
     }
@@ -149,7 +170,7 @@ export async function* observeEvents(agent: any, inputs: any, cfg?: StreamConfig
     if (event === 'on_tool_start') {
       const name: string = typeof data?.name === 'string' ? data.name : (data?.tool?.name ?? 'unknown-tool');
       const args = data?.input ?? data?.args ?? undefined;
-      const ev: ToolCallEvent = { type: 'tool-call', ts: Date.now(), name, args };
+      const ev: ToolCallEvent = { type: 'tool-call', ts: Date.now(), role: 'tool', name, args };
       yield ev;
       continue;
     }
@@ -158,7 +179,7 @@ export async function* observeEvents(agent: any, inputs: any, cfg?: StreamConfig
     if (event === 'on_tool_end') {
       const name: string = typeof data?.name === 'string' ? data.name : (data?.tool?.name ?? 'unknown-tool');
       const output = data?.output ?? data?.result ?? undefined;
-      const ev: ToolResultEvent = { type: 'tool-result', ts: Date.now(), name, output };
+      const ev: ToolResultEvent = { type: 'tool-result', ts: Date.now(), role: 'tool', name, output };
       yield ev;
       continue;
     }
