@@ -111,8 +111,9 @@ export async function* observeValues(agent: any, inputs: any, cfg?: StreamConfig
  */
 export async function* observeEvents(agent: any, inputs: any, cfg?: StreamConfigLike): AsyncGenerator<StreamEvent> {
   // 在 events v2 模式下，同样携带 configurable.thread_id 以启用持久化线程回放
-  const options: StreamConfigLike = {
+  const options: any = {
     version: 'v2',
+    includeTypes: ["tool", "chat_model", "chain"], // 参考rag-demo.ts的正确配置
     ...(cfg ?? {}),
     configurable: {
       ...(cfg?.configurable ?? {}),
@@ -125,7 +126,6 @@ export async function* observeEvents(agent: any, inputs: any, cfg?: StreamConfig
   let accText = '';
   let emittedAssistant = false;
   for await (const item of eventStream) {
-    console.log("item", JSON.stringify(item))
     const event = (item as any)?.event as string | undefined;
     const data = (item as any)?.data as any;
     if (!event) continue;

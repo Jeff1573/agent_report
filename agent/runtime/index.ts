@@ -92,11 +92,28 @@ class SegmentAccumulator {
 
 /** 创建运行时实例 */
 export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<AgentRuntime> {
-  const llm = makeChatModel();
-  const tools = Array.isArray(config.tools) && config.tools.length > 0 ? config.tools : getDefaultTools();
+  let tools: unknown[];
+  try {
+    tools = Array.isArray(config.tools) && config.tools.length > 0 ? config.tools : getDefaultTools();
+    logger.info(`Loaded ${tools.length} tools successfully`);
+  } catch (error) {
+    logger.error('Failed to load tools:', error);
+    tools = []; // 如果工具加载失败，使用空数组
+  }
   const persistenceMode: PersistenceMode = config.persistenceMode ?? (CHECKPOINT_MODE as PersistenceMode) ?? 'memory';
   // 依据环境动态创建 checkpointer（MemorySaver / PostgresSaver）
   const checkpointer = await createCheckpointer(persistenceMode);
+  
+  // ⭐ 关键：关闭模型级 streaming（避免不完整的"流式函数调用"片段）
+  const baseLLM = makeChatModel({
+    streaming: false,     // 重要：不要逐 token 流；函数调用一次性返回，最稳
+    streamUsage: false,
+  });
+  
+  // 强制至少使用一个工具，避免模型"凭记忆直接回答"（参考rag-demo.ts）
+  const llm = tools.length > 0 ? baseLLM.bindTools(tools as any, { tool_choice: "any" }) : baseLLM;
+  logger.info(`LLM configured with ${tools.length} tools, tool_choice: ${tools.length > 0 ? 'any' : 'none'}`);
+  
   // 这里做宽松断言以兼容不同工具实现（ServerTool/ClientTool/ToolNode），避免类型收窄导致的构建失败
   const agent = createReactAgent({
     llm: llm as any,

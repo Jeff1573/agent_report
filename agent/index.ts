@@ -34,6 +34,11 @@ function parseCli(argv: string[]) {
       if (typeof v === 'string' && v.trim()) threadId = v.trim();
       continue;
     }
+    if (a === '--input' || a.startsWith('--input=')) {
+      const v = a.includes('=') ? a.split('=')[1] : args[++i];
+      if (typeof v === 'string') rest.push(v);
+      continue;
+    }
     rest.push(a);
   }
 

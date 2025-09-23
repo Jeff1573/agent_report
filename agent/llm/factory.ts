@@ -17,6 +17,7 @@ export type ChatModelOverrides = Partial<{
   temperature: number
   timeout: number
   maxRetries: number
+  streaming: boolean
   streamUsage: boolean
   baseURL: string
 }>
@@ -37,7 +38,8 @@ export function makeChatModel(overrides: ChatOpenAIFields & ChatModelOverrides =
     temperature: overrides.temperature ?? 0,
     timeout: overrides.timeout ?? TIMEOUT_MS,
     maxRetries: overrides.maxRetries ?? MAX_RETRIES,
-    // 某些“兼容”端点不支持 stream_options → 关掉即可
+    // 流式相关配置
+    streaming: overrides.streaming, // 显式传递 streaming 参数
     streamUsage: overrides.streamUsage ?? OPENAI_STREAM_USAGE,
     // 关键：自定义 baseURL / headers 走 configuration
     configuration: {
