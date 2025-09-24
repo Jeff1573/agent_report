@@ -53,3 +53,5 @@ export const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || process.env.GEMINI_A
 export const FORCE_TOOL_NAME = process.env.FORCE_TOOL_NAME || '';
 export const FORCE_TOOL_CHOICE_STYLE = process.env.FORCE_TOOL_CHOICE_STYLE || 'tool';
 
+// 本地 RAG 语料目录（绝对路径），用于 examples/rag-local-ask.ts
+export const RAG_DATA_DIR = process.env.RAG_DATA_DIR || '';
