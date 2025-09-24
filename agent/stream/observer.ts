@@ -33,6 +33,54 @@ function contentToString(content: unknown): string {
 }
 
 /**
+ * 从 events v2 的条目中解析工具名称。
+ * 优先顺序：
+ * 1) 顶层 `item.name`（LangGraph v2 事件标准字段）
+ * 2) `data.name`（部分提供商/中间件会下发）
+ * 3) `data.tool.name`（少数实现）
+ * 4) `data.output.name`（ToolMessage 通常包含 tool 名称，仅在 on_tool_end 可用）
+ * 5) `data.input.tool` / `data.input.name`（自定义封送）
+ */
+function getToolNameFromEvent(item: any): string {
+  try {
+    const top = typeof item?.name === 'string' && item.name.trim() ? item.name : undefined;
+    if (top) return top;
+    const data = item?.data ?? {};
+    const d1 = typeof data?.name === 'string' && data.name.trim() ? data.name : undefined;
+    if (d1) return d1;
+    const d2 = typeof data?.tool?.name === 'string' && data.tool.name.trim() ? data.tool.name : undefined;
+    if (d2) return d2;
+    const d3 = typeof data?.output?.name === 'string' && data.output.name.trim() ? data.output.name : undefined;
+    if (d3) return d3;
+    const d4 = typeof data?.input?.tool === 'string' && data.input.tool.trim() ? data.input.tool : undefined;
+    if (d4) return d4;
+    const d5 = typeof data?.input?.name === 'string' && data.input.name.trim() ? data.input.name : undefined;
+    if (d5) return d5;
+  } catch {
+    // ignore
+  }
+  return 'unknown-tool';
+}
+
+/**
+ * 解析工具入参，兼容多种封送：
+ * - 直接对象：{ query: "..." }
+ * - 包裹对象：{ input: {...} }
+ * - 字符串化 JSON：{ input: '{"query":"..."}' }
+ */
+function getToolArgsFromEventData(data: any): unknown {
+  const raw = data?.input ?? data?.args ?? undefined;
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return { input: raw };
+    }
+  }
+  return raw;
+}
+
+/**
  * values 模式：从 `agent.stream(inputs, { streamMode: 'values' })` 转为统一事件
  */
 export async function* observeValues(agent: any, inputs: any, cfg?: StreamConfigLike): AsyncGenerator<StreamEvent> {
@@ -171,8 +219,8 @@ export async function* observeEvents(agent: any, inputs: any, cfg?: StreamConfig
 
     // 3) 工具开始
     if (event === 'on_tool_start') {
-      const name: string = typeof data?.name === 'string' ? data.name : (data?.tool?.name ?? 'unknown-tool');
-      const args = data?.input ?? data?.args ?? undefined;
+      const name: string = getToolNameFromEvent(item);
+      const args = getToolArgsFromEventData(data);
       const ev: ToolCallEvent = { type: 'tool-call', ts: Date.now(), role: 'tool', name, args };
       yield ev;
       continue;
@@ -180,7 +228,7 @@ export async function* observeEvents(agent: any, inputs: any, cfg?: StreamConfig
 
     // 4) 工具结束
     if (event === 'on_tool_end') {
-      const name: string = typeof data?.name === 'string' ? data.name : (data?.tool?.name ?? 'unknown-tool');
+      const name: string = getToolNameFromEvent(item);
       const output = data?.output ?? data?.result ?? undefined;
       const ev: ToolResultEvent = { type: 'tool-result', ts: Date.now(), role: 'tool', name, output };
       yield ev;
