@@ -39,8 +39,8 @@ export function makeChatModel(overrides: ChatOpenAIFields & ChatModelOverrides =
     timeout: overrides.timeout ?? TIMEOUT_MS,
     maxRetries: overrides.maxRetries ?? MAX_RETRIES,
     // 流式相关配置
-    streaming: overrides.streaming, // 显式传递 streaming 参数
-    streamUsage: overrides.streamUsage ?? OPENAI_STREAM_USAGE,
+    streaming: overrides.streaming ?? false, // 显式传递 streaming 参数
+    streamUsage: overrides.streamUsage ?? false,
     // 关键：自定义 baseURL / headers 走 configuration
     configuration: {
       baseURL: overrides.baseURL ?? OPENAI_BASE_URL,
