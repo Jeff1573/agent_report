@@ -1,37 +1,38 @@
 {
-  "name": "agent",
-  "version": "0.0.0",
-  "private": true,
-  "type": "module",
-  "engines": {
-    "node": ">=22 <23"
-  },
-  "license": "UNLICENSED",
-  "description": "Agent workspace for LangChain/OpenAI integrations (ESM)",
-  "scripts": {
-    "start": "tsx index.ts",
-    "typecheck": "tsc --noEmit",
-    "demo:persistence": "tsx examples/persistence-demo.ts",
-    "demo:structured-output": "tsx examples/structured-output-demo.ts",
-    "demo:kb": "tsx examples/kb-retriever-demo.ts"
-  },
-  "devDependencies": {
-    "@types/node": "^22.7.4",
-    "tsx": "^4.19.2",
-    "typescript": "^5.6.2"
-  },
-  "dependencies": {
-    "@langchain/community": "^0.3.56",
-    "@langchain/core": "^0.3.77",
-    "@langchain/google-genai": "^0.2.18",
-    "@langchain/langgraph": "^0.4.9",
-    "@langchain/langgraph-checkpoint": "^0.1.0",
-    "@langchain/langgraph-checkpoint-postgres": "^0.1.0",
-    "@langchain/openai": "^0.6.13",
-    "@langchain/tavily": "^0.1.5",
-    "dotenv": "^16.4.5",
-    "duck-duck-scrape": "^2.2.7",
-    "langchain": "^0.3.34",
-    "zod": "^3.25.76"
-  }
+    "name": "agent",
+    "version": "0.0.0",
+    "private": true,
+    "type": "module",
+    "engines": {
+        "node": ">=22 <23"
+    },
+    "license": "UNLICENSED",
+    "description": "Agent workspace for LangChain/OpenAI integrations (ESM)",
+    "scripts": {
+        "demo:embed": "tsx examples/embedding-connection-test.ts",
+        "start": "tsx index.ts",
+        "typecheck": "tsc --noEmit",
+        "demo:persistence": "tsx examples/persistence-demo.ts",
+        "demo:structured-output": "tsx examples/structured-output-demo.ts",
+        "demo:kb": "tsx examples/kb-retriever-demo.ts"
+    },
+    "devDependencies": {
+        "@types/node": "^22.7.4",
+        "tsx": "^4.19.2",
+        "typescript": "^5.6.2"
+    },
+    "dependencies": {
+        "@langchain/community": "^0.3.56",
+        "@langchain/core": "^0.3.77",
+        "@langchain/google-genai": "^0.2.18",
+        "@langchain/langgraph": "^0.4.9",
+        "@langchain/langgraph-checkpoint": "^0.1.0",
+        "@langchain/langgraph-checkpoint-postgres": "^0.1.0",
+        "@langchain/openai": "^0.6.13",
+        "@langchain/tavily": "^0.1.5",
+        "dotenv": "^16.4.5",
+        "duck-duck-scrape": "^2.2.7",
+        "langchain": "^0.3.34",
+        "zod": "^3.25.76"
+    }
 }
