@@ -10,10 +10,8 @@
  *   - OPENAI_BASE_URL / OPENAI_API_KEY / OPENAI_MODEL（对话模型，见 llm/factory.ts）
  */
 
-import '../config/env.ts'
 import * as path from 'node:path'
 import * as fs from 'node:fs'
-import { z } from 'zod'
 import { Document } from '@langchain/core/documents'
 import { ChatPromptTemplate } from '@langchain/core/prompts'
 import { StringOutputParser } from '@langchain/core/output_parsers'
@@ -25,7 +23,7 @@ import { GoogleGenerativeAIEmbeddings } from '@langchain/google-genai'
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters'
 import { logger } from '../utils/logger.js'
 import { makeChatModel } from '../llm/factory.js'
-import { RAG_DATA_DIR, GOOGLE_API_KEY } from '../config/env.js'
+import { RAG_DATA_DIR, GOOGLE_API_KEY, KB_EMBED_MODEL } from '../config/env.js'
 
 /**
  * 解析命令行参数（--q 或直接拼接 argv）。
@@ -70,7 +68,7 @@ function requireAbsoluteDataDir(): string {
 async function loadLocalDocuments(root: string): Promise<Document[]> {
   const loader = new DirectoryLoader(root, {
     '.txt': (p: string) => new TextLoader(p),
-    '.md': (p: string) => new TextLoader(p)
+    '.md': (p: string) => new TextLoader(p),
   })
   const docs = await loader.load()
   // 统一确保 metadata.source 为绝对路径字符串
@@ -104,10 +102,11 @@ async function splitIntoChunks(
  * @param {number} k 召回条数（默认 4）
  */
 async function buildRetriever(chunks: Document[], k = 4) {
-  const apiKey = GOOGLE_API_KEY || process.env.GEMINI_API_KEY || ''
+  // 优先使用统一的配置导出，避免在此处直接访问 process.env
+  const apiKey = GOOGLE_API_KEY
   const embeddings = new GoogleGenerativeAIEmbeddings({
     apiKey: apiKey || undefined,
-    model: 'text-embedding-004'
+    model: KB_EMBED_MODEL
   })
   const store = await MemoryVectorStore.fromDocuments(chunks, embeddings)
   return store.asRetriever({ k, searchType: 'similarity' })
