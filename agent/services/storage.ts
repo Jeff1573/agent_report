@@ -90,7 +90,7 @@ function hashFilename(name: string): string {
 }
 
 function resolveRawPath(relative: string): string {
-  return path.resolve(KB_STORAGE_RAW_DIR, relative)
+  return path.resolve(KB_STORAGE_RAW_DIR || '', relative)
 }
 
 /**
