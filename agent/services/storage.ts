@@ -17,7 +17,7 @@
  * - 依赖：LangChain.js v0.3 官方集成；环境变量配置见 config/env.ts。
  */
 
-import crypto from 'node:crypto'
+import * as crypto from 'node:crypto'
 import * as fs from 'node:fs/promises'
 import * as fsSync from 'node:fs'
 import * as path from 'node:path'
@@ -314,26 +314,7 @@ export async function splitDocuments(
   })
 }
 
-/**
- * 构建 Embeddings 实例（支持 openai / gemini），并处理远程 baseURL 与自定义鉴权头。
- * @returns OpenAIEmbeddings | GoogleGenerativeAIEmbeddings
- */
-function makeEmbeddings() {
-  const provider = (KB_EMBED_PROVIDER || 'openai').toLowerCase()
-  if (provider === 'gemini') {
-    const apiKey = GOOGLE_API_KEY
-    if (!apiKey) {
-      throw new Error('缺少 Google API Key，无法使用 Gemini 嵌入模型')
-    }
-    return new GoogleGenerativeAIEmbeddings({
-      apiKey,
-      model: KB_EMBED_MODEL
-    })
-  }
-  return new OpenAIEmbeddings({
-    model: KB_EMBED_MODEL
-  })
-}
+import { makeKbEmbeddings as makeEmbeddings } from './embeddings.js'
 
 /**
  * 确保 Chroma 集合存在。
