@@ -6,6 +6,7 @@
  *   （证据：LangGraph JS How-to "Create a ReAct Agent" 示例）
  */
 import { tavilyTool, makeTavily } from './tavily.js';
+import { kbSearchTool } from './kb.js';
 
 /** 工具类型占位（LangChain Tool 接口为结构化对象，避免引入不必要耦合） */
 export type AnyTool = unknown;
@@ -15,7 +16,8 @@ export type AnyTool = unknown;
  * 当前仅启用 Tavily。
  */
 export function getDefaultTools(): AnyTool[] {
-  return [tavilyTool];
+  // 将内部检索置于前，鼓励模型优先使用私有知识
+  return [kbSearchTool, tavilyTool];
 }
 
 /**
@@ -23,8 +25,7 @@ export function getDefaultTools(): AnyTool[] {
  */
 export function createTools(): AnyTool[] {
   // 预留：可在此处基于环境变量切换不同搜索供应商
-  return [makeTavily()];
+  return [kbSearchTool, makeTavily()];
 }
 
 export { tavilyTool, makeTavily };
-

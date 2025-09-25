@@ -315,6 +315,7 @@ export async function splitDocuments(
 }
 
 import { makeKbEmbeddings as makeEmbeddings } from './embeddings.js'
+import { sanitizeCollectionName, generateRandomCollectionName } from '../config/env.js'
 
 /**
  * 确保 Chroma 集合存在。
@@ -334,6 +335,33 @@ async function ensureChromaCollection(embeddings: OpenAIEmbeddings | GoogleGener
         collectionName,
         url: CHROMA_URL || undefined
       })
+    }
+    throw error
+  }
+}
+
+/**
+ * 只读方式打开已存在的 Chroma 集合，不存在即抛错（避免误创建空集合）。
+ *
+ * @param {OpenAIEmbeddings | GoogleGenerativeAIEmbeddings} embeddings - 向量嵌入实例
+ * @param {string} collectionName - 目标集合名
+ * @returns {Promise<Chroma>} 已存在的集合实例
+ */
+export async function openChromaReadonly(
+  embeddings: OpenAIEmbeddings | GoogleGenerativeAIEmbeddings,
+  collectionName: string
+): Promise<Chroma> {
+  if (!CHROMA_URL || CHROMA_URL.trim().length === 0) {
+    throw new Error('未配置 CHROMA_URL，无法连接 Chroma 服务')
+  }
+  try {
+    return await Chroma.fromExistingCollection(embeddings as any, {
+      collectionName,
+      url: CHROMA_URL || undefined
+    })
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('does not exist')) {
+      throw new Error(`Chroma 集合不存在：${collectionName}。请确认 KB_COLLECTION 是否正确配置，或先完成入库。`)
     }
     throw error
   }
@@ -381,6 +409,54 @@ export async function upsertToChroma(
   }
 }
 
+/**
+ * 检索器构建选项。
+ */
+export interface RetrieverOptions {
+  /** 返回条数（默认 4） */
+  k?: number
+  /** 检索类型：similarity | mmr（默认 similarity） */
+  searchType?: 'similarity' | 'mmr'
+  /** 当 searchType=mmr 时的折中系数（0~1，默认 0.5） */
+  mmrLambda?: number
+  /** 元数据过滤（保留占位，初期可不实现） */
+  where?: Record<string, unknown>
+}
+
+/**
+ * 从指定集合构建只读检索器；集合不存在将抛错。
+ *
+ * @param {string} collectionName - 集合名
+ * @param {RetrieverOptions} options - 检索器参数
+ * @returns {Promise<ReturnType<Chroma['asRetriever']>>} 检索器
+ */
+export async function buildChromaRetriever(
+  collectionName: string,
+  options: RetrieverOptions = {}
+) {
+  const embeddings = makeEmbeddings()
+  const store = await openChromaReadonly(embeddings, sanitizeCollectionName(collectionName))
+  const k = typeof options.k === 'number' && options.k > 0 ? options.k : 4
+  const searchType = (options.searchType === 'mmr' ? 'mmr' : 'similarity') as 'similarity' | 'mmr'
+  const retriever = store.asRetriever({
+    k,
+    searchType,
+    searchKwargs: searchType === 'mmr' ? { lambda: typeof options.mmrLambda === 'number' ? options.mmrLambda : 0.5 } : undefined
+  })
+  return retriever
+}
+
+/**
+ * 生成或清洗集合名。
+ * - 若传入非空，先清洗后返回；
+ * - 否则生成随机名（kb_YYYYMMDD_xxxxxxxx）。
+ */
+export function resolveCollectionName(input?: string): string {
+  const name = (input ?? '').trim()
+  if (name) return sanitizeCollectionName(name)
+  return generateRandomCollectionName()
+}
+
 export interface IngestFileParams {
   collectionName: string
   filename: string
@@ -412,4 +488,3 @@ export async function ingestFile(params: IngestFileParams): Promise<SaveFileResu
     chunks: chunks.length
   }
 }
-

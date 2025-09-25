@@ -9,6 +9,7 @@
 ## 目录结构
 - `desktop/`：Electron + React 工作区
 - `packages/*`：未来新增的库/应用工作区
+ - `agent/`：LangChain / OpenAI 兼容 / LangGraph 封装与示例
 
 ## 安装
 - 一次性安装全部工作区依赖（在仓库根目录）：
@@ -31,9 +32,26 @@
   npm run build:all
   npm run typecheck:all
   npm run lint:all
-  npm run test:all
+npm run test:all
   ```
   说明：根脚本不会被 `--workspaces` 自动包含，若需要把根脚本也并入，请在命令末尾追加 `--include-workspace-root`。
+
+## Agent 工作区（Chroma 检索快速验证）
+
+前提：
+- 已有可访问的 Chroma HTTP 服务（`CHROMA_URL`）。
+- 入库与检索使用相同的嵌入供应商与模型（`KB_EMBED_PROVIDER` / `KB_EMBED_MODEL`）。
+- 建议在 `agent/.env` 设置 `KB_COLLECTION` 为既有集合名；未设置时会生成随机名，若该名在库中不存在将报错提示你补齐配置。
+
+运行：
+
+```bash
+npm run demo:kb:chroma -w agent -- --q "什么是 RAG？" --collection your_collection --k 4 --type similarity
+```
+
+说明：
+- `--type` 支持 `similarity` 或 `mmr`；`mmr` 时可追加 `--lambda 0.5`。
+- 输出将附带“参考来源”（去重后的 source 列表）。
 
 ## 依赖管理
 - 向指定工作区添加依赖：
@@ -62,4 +80,3 @@
 - Using npm Workspaces（v11）
 - npm run（`--workspaces`、`--workspace/-w`、`--if-present`、`--include-workspace-root`）
 - npm init（`npm init -w <dir>` 创建工作区）
-

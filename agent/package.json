@@ -15,7 +15,9 @@
     "demo:persistence": "tsx examples/persistence-demo.ts",
     "demo:structured-output": "tsx examples/structured-output-demo.ts",
     "demo:kb": "tsx examples/kb-retriever-demo.ts",
-    "rag:ask": "tsx examples/rag-local-ask.ts"
+    "rag:ask": "tsx examples/rag-local-ask.ts",
+    "demo:kb:chroma": "tsx examples/kb-chroma-quickcheck.ts",
+    "demo:kb:list": "tsx examples/chroma-list-collections.ts"
   },
   "devDependencies": {
     "@types/node": "^22.7.4",

@@ -57,6 +57,13 @@ export const FORCE_TOOL_CHOICE_STYLE = process.env.FORCE_TOOL_CHOICE_STYLE || 't
 // 本地 RAG 语料目录（绝对路径），用于 examples/rag-local-ask.ts
 export const RAG_DATA_DIR = process.env.RAG_DATA_DIR || '';
 
+// 知识库集合名（可选）。若未配置，部分写入流程可选择生成随机集合名作为兜底；
+// 检索流程建议显式配置（避免因随机名而检索不到既有数据）。
+export const KB_COLLECTION = (process.env.KB_COLLECTION || '').trim();
+
+// 检索上下文拼接最大字符数（避免提示过长被模型截断）
+export const RAG_CTX_CHAR_LIMIT = Math.max(500, Number(process.env.RAG_CTX_CHAR_LIMIT || 3500));
+
 // 知识库文件存储目录（需要显式配置，未设置则视为禁用相关能力）
 const KB_ROOT_FROM_ENV = process.env.KB_STORAGE_ROOT; // 知识库根目录（用于存放所有知识库资源）
 const KB_RAW_FROM_ENV = process.env.KB_STORAGE_RAW_DIR; // 知识库原始文件目录（存放上传原始文件）
@@ -91,3 +98,27 @@ export const KB_STORAGE_ROOT = resolvedKbRoot; // 知识库根目录绝对路径
 export const KB_STORAGE_RAW_DIR = resolvedKbRawDir; // 知识库原始文件目录绝对路径（未配置则为 undefined）
 
 export const CHROMA_URL = process.env.CHROMA_URL || process.env.CHROMADB_URL || ''; // Chroma 数据库 URL（HTTP 接入地址）
+
+/**
+ * 生成安全的随机集合名：kb_YYYYMMDD_xxxxxxxx
+ *
+ * @returns {string} 集合名
+ */
+export function generateRandomCollectionName(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  const suffix = Math.random().toString(36).slice(2, 10);
+  return `kb_${y}${m}${d}_${suffix}`;
+}
+
+/**
+ * 规范化集合名，只保留 [a-zA-Z0-9_-]
+ *
+ * @param {string} name 原始名称
+ * @returns {string} 清洗后的名称
+ */
+export function sanitizeCollectionName(name: string): string {
+  return (name || '').replace(/[^a-zA-Z0-9_-]/g, '-');
+}
