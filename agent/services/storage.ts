@@ -27,6 +27,7 @@ import { OpenAIEmbeddings } from '@langchain/openai'
 import { GoogleGenerativeAIEmbeddings } from '@langchain/google-genai'
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters'
 import {
+  KB_STORAGE_ROOT,
   KB_STORAGE_RAW_DIR,
   KB_EMBED_MODEL,
   KB_EMBED_PROVIDER,
@@ -112,6 +113,9 @@ export async function saveRawFile(
   buffer: Buffer,
   collectionName: string
 ): Promise<StoredFileMeta> {
+  if (!KB_STORAGE_RAW_DIR || !KB_STORAGE_ROOT) {
+    throw new Error('知识库存储目录未配置，当前环境禁用 RAG 入库功能')
+  }
   if (!filename || filename.trim().length === 0) {
     throw new Error('saveRawFile: filename 不能为空')
   }
@@ -156,6 +160,9 @@ export async function saveRawFile(
  * @returns {Promise<FileDescriptor[]>} 文件描述符数组
  */
 export async function listRawFiles(collectionName?: string): Promise<FileDescriptor[]> {
+  if (!KB_STORAGE_RAW_DIR) {
+    return []
+  }
   const root = KB_STORAGE_RAW_DIR
   if (!fsSync.existsSync(root)) {
     return []
@@ -196,6 +203,9 @@ export async function listRawFiles(collectionName?: string): Promise<FileDescrip
  * @returns {Promise<Buffer>} 文件 Buffer
  */
 export async function readRawFile(relativePath: string): Promise<Buffer> {
+  if (!KB_STORAGE_RAW_DIR) {
+    throw new Error('知识库原始目录未配置，无法读取文件')
+  }
   const abs = resolveRawPath(relativePath)
   return fs.readFile(abs)
 }
@@ -210,6 +220,9 @@ export async function readRawFile(relativePath: string): Promise<Buffer> {
  * @returns {Promise<void>} Promise 实例
  */
 export async function removeRawFile(relativePath: string): Promise<void> {
+  if (!KB_STORAGE_RAW_DIR) {
+    throw new Error('知识库原始目录未配置，无法删除文件')
+  }
   const abs = resolveRawPath(relativePath)
   await fs.unlink(abs)
 }
@@ -225,6 +238,9 @@ export async function removeRawFile(relativePath: string): Promise<void> {
  * @returns {Promise<Document[]>} 文档数组
  */
 export async function loadDocumentsFromRaw(relativePath: string): Promise<Document[]> {
+  if (!KB_STORAGE_RAW_DIR) {
+    throw new Error('知识库原始目录未配置，无法加载文档')
+  }
   const abs = resolveRawPath(relativePath)
   const ext = path.extname(abs).toLowerCase()
   let docs: Document[] = []
@@ -272,6 +288,9 @@ export async function splitDocuments(
   docs: Document[],
   options: SplitOptions = {}
 ): Promise<Document[]> {
+  if (!KB_STORAGE_ROOT) {
+    throw new Error('知识库根目录未配置，无法执行文档切块')
+  }
   const size = typeof options.chunkSize === 'number' && options.chunkSize > 0 ? options.chunkSize : 1000
   const overlap = typeof options.chunkOverlap === 'number' && options.chunkOverlap >= 0 ? options.chunkOverlap : 150
   const splitter = new RecursiveCharacterTextSplitter({ chunkSize: size, chunkOverlap: overlap })
@@ -343,6 +362,9 @@ export async function upsertToChroma(
   collectionName: string,
   docs: Document[]
 ): Promise<VectorUpsertResult> {
+  if (!KB_STORAGE_ROOT || !KB_STORAGE_RAW_DIR) {
+    throw new Error('知识库目录未配置，无法写入向量库')
+  }
   if (!collectionName || collectionName.trim().length === 0) {
     throw new Error('upsertToChroma: collectionName 不能为空')
   }
@@ -382,6 +404,9 @@ export interface IngestFileParams {
  * @returns {Promise<SaveFileResult>} 保存结果
  */
 export async function ingestFile(params: IngestFileParams): Promise<SaveFileResult> {
+  if (!KB_STORAGE_ROOT || !KB_STORAGE_RAW_DIR) {
+    throw new Error('知识库目录未配置，无法执行入库流程')
+  }
   const { collectionName, filename, buffer, split } = params
   const meta = await saveRawFile(filename, buffer, collectionName)
   const docs = await loadDocumentsFromRaw(meta.relativePath)

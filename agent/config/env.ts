@@ -57,11 +57,9 @@ export const FORCE_TOOL_CHOICE_STYLE = process.env.FORCE_TOOL_CHOICE_STYLE || 't
 // 本地 RAG 语料目录（绝对路径），用于 examples/rag-local-ask.ts
 export const RAG_DATA_DIR = process.env.RAG_DATA_DIR || '';
 
-// 知识库文件存储目录（原始文件）
+// 知识库文件存储目录（需要显式配置，未设置则视为禁用相关能力）
 const KB_ROOT_FROM_ENV = process.env.KB_STORAGE_ROOT; // 知识库根目录（用于存放所有知识库资源）
 const KB_RAW_FROM_ENV = process.env.KB_STORAGE_RAW_DIR; // 知识库原始文件目录（存放上传原始文件）
-const defaultKbRoot = path.resolve(process.cwd(), 'storage');
-const defaultKbRaw = path.join(defaultKbRoot, 'raw');
 
 /**
  * 确保目录存在并返回绝对路径。
@@ -76,18 +74,20 @@ function ensureDir(dir: string): string {
   return dir;
 }
 
-const resolvedKbRoot = ensureDir(
-  typeof KB_ROOT_FROM_ENV === 'string' && KB_ROOT_FROM_ENV.trim().length > 0
-    ? path.resolve(KB_ROOT_FROM_ENV)
-    : defaultKbRoot
-);
+let resolvedKbRoot: string | undefined;
+let resolvedKbRawDir: string | undefined;
 
-const resolvedKbRawBase =
-  typeof KB_RAW_FROM_ENV === 'string' && KB_RAW_FROM_ENV.trim().length > 0
-    ? path.resolve(KB_RAW_FROM_ENV)
-    : path.join(resolvedKbRoot, 'raw');
+if (typeof KB_ROOT_FROM_ENV === 'string' && KB_ROOT_FROM_ENV.trim().length > 0) {
+  const absRoot = path.resolve(KB_ROOT_FROM_ENV);
+  resolvedKbRoot = ensureDir(absRoot);
+  if (typeof KB_RAW_FROM_ENV === 'string' && KB_RAW_FROM_ENV.trim().length > 0) {
+    resolvedKbRawDir = ensureDir(path.resolve(KB_RAW_FROM_ENV));
+  } else {
+    resolvedKbRawDir = ensureDir(path.join(absRoot, 'raw'));
+  }
+}
 
-export const KB_STORAGE_ROOT = resolvedKbRoot; // 知识库根目录绝对路径
-export const KB_STORAGE_RAW_DIR = ensureDir(resolvedKbRawBase); // 知识库原始文件存储目录绝对路径
+export const KB_STORAGE_ROOT = resolvedKbRoot; // 知识库根目录绝对路径（未配置则为 undefined）
+export const KB_STORAGE_RAW_DIR = resolvedKbRawDir; // 知识库原始文件目录绝对路径（未配置则为 undefined）
 
 export const CHROMA_URL = process.env.CHROMA_URL || process.env.CHROMADB_URL || ''; // Chroma 数据库 URL（HTTP 接入地址）
