@@ -6,6 +6,7 @@
  */
 import * as dotenv from 'dotenv';
 import * as path from 'node:path';
+import * as fs from 'node:fs';
 
 dotenv.config({
   path: process.env.DOTENV_CONFIG_PATH || path.resolve(process.cwd(), '.env'),
@@ -55,3 +56,38 @@ export const FORCE_TOOL_CHOICE_STYLE = process.env.FORCE_TOOL_CHOICE_STYLE || 't
 
 // 本地 RAG 语料目录（绝对路径），用于 examples/rag-local-ask.ts
 export const RAG_DATA_DIR = process.env.RAG_DATA_DIR || '';
+
+// 知识库文件存储目录（原始文件）
+const KB_ROOT_FROM_ENV = process.env.KB_STORAGE_ROOT; // 知识库根目录（用于存放所有知识库资源）
+const KB_RAW_FROM_ENV = process.env.KB_STORAGE_RAW_DIR; // 知识库原始文件目录（存放上传原始文件）
+const defaultKbRoot = path.resolve(process.cwd(), 'storage');
+const defaultKbRaw = path.join(defaultKbRoot, 'raw');
+
+/**
+ * 确保目录存在并返回绝对路径。
+ *
+ * @param {string} dir - 需要创建或确认的目录路径
+ * @returns {string} 目录的绝对路径
+ */
+function ensureDir(dir: string): string {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
+const resolvedKbRoot = ensureDir(
+  typeof KB_ROOT_FROM_ENV === 'string' && KB_ROOT_FROM_ENV.trim().length > 0
+    ? path.resolve(KB_ROOT_FROM_ENV)
+    : defaultKbRoot
+);
+
+const resolvedKbRawBase =
+  typeof KB_RAW_FROM_ENV === 'string' && KB_RAW_FROM_ENV.trim().length > 0
+    ? path.resolve(KB_RAW_FROM_ENV)
+    : path.join(resolvedKbRoot, 'raw');
+
+export const KB_STORAGE_ROOT = resolvedKbRoot; // 知识库根目录绝对路径
+export const KB_STORAGE_RAW_DIR = ensureDir(resolvedKbRawBase); // 知识库原始文件存储目录绝对路径
+
+export const CHROMA_URL = process.env.CHROMA_URL || process.env.CHROMADB_URL || ''; // Chroma 数据库 URL（HTTP 接入地址）
