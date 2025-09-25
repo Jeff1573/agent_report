@@ -314,6 +314,10 @@ export async function splitDocuments(
   })
 }
 
+/**
+ * 构建 Embeddings 实例（支持 openai / gemini），并处理远程 baseURL 与自定义鉴权头。
+ * @returns OpenAIEmbeddings | GoogleGenerativeAIEmbeddings
+ */
 function makeEmbeddings() {
   const provider = (KB_EMBED_PROVIDER || 'openai').toLowerCase()
   if (provider === 'gemini') {
@@ -331,6 +335,12 @@ function makeEmbeddings() {
   })
 }
 
+/**
+ * 确保 Chroma 集合存在。
+ * @param embeddings Embeddings 实例
+ * @param collectionName 集合名
+ * @returns Chroma 集合
+ */
 async function ensureChromaCollection(embeddings: OpenAIEmbeddings | GoogleGenerativeAIEmbeddings, collectionName: string) {
   try {
     return await Chroma.fromExistingCollection(embeddings as any, {
@@ -408,9 +418,13 @@ export async function ingestFile(params: IngestFileParams): Promise<SaveFileResu
     throw new Error('知识库目录未配置，无法执行入库流程')
   }
   const { collectionName, filename, buffer, split } = params
+  // 保存原始文件
   const meta = await saveRawFile(filename, buffer, collectionName)
+  // 加载原始文件
   const docs = await loadDocumentsFromRaw(meta.relativePath)
+  // 切块
   const chunks = await splitDocuments(docs, split)
+  // 写入向量库
   await upsertToChroma(collectionName, chunks)
   return {
     file: meta,
