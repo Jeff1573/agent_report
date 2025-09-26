@@ -392,8 +392,11 @@ export async function upsertToChroma(
     throw new Error('upsertToChroma: docs 不能为空')
   }
 
+  // 创建向量嵌入实例
   const embeddings = makeEmbeddings()
+  // 检查集合是否存在
   const store = await ensureChromaCollection(embeddings, collectionName)
+  // 生成文档ID
   const ids = docs.map((doc) => {
     const fromMeta = (doc.metadata as any)?.chunkId
     if (typeof fromMeta === 'string' && fromMeta.length > 0) return fromMeta
@@ -403,6 +406,7 @@ export async function upsertToChroma(
       .digest('hex')
       .slice(0, 16)
   })
+  // 写入向量库
   await store.addDocuments(docs, { ids })
   return {
     collectionName,

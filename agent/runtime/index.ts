@@ -167,7 +167,7 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
               } catch {
                 // 若不是 JSON，尝试从文本中提取“参考来源”段
                 const m = raw.split(/\r?\n/);
-                const idx = m.findIndex((line) => /参考来源/.test(line));
+                const idx = m.findIndex((line: string) => /参考来源/.test(line));
                 if (idx >= 0) {
                   const tail = m.slice(idx).join('\n');
                   extra = `\n${tail.trim()}`;
