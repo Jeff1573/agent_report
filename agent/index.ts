@@ -3,15 +3,40 @@
 
 import { logger, createLogger } from './utils/logger.js';
 import { createAgentRuntime } from './runtime/index.js';
-import { THREAD_ID_FALLBACK } from './config/env.js';
+import { THREAD_ID_FALLBACK, TIMEOUT_MS } from './config/env.js';
 
 type Mode = 'values' | 'events';
 
+/**
+ * 读取 STDIN（若可用）。
+ *
+ * @returns {Promise<string>} 标准输入内容字符串
+ */
+async function readStdin(): Promise<string> {
+  return new Promise((resolve) => {
+    try {
+      const chunks: Buffer[] = [];
+      if (process.stdin.isTTY) return resolve('');
+      process.stdin.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(String(c))));
+      process.stdin.on('end', () => resolve(Buffer.concat(chunks).toString('utf8').trim()));
+      process.stdin.resume();
+    } catch {
+      resolve('');
+    }
+  });
+}
+
+/**
+ * 解析命令行参数。
+ * - 支持：--mode events|values、--summary on|off、--thread <id>、--input "..."
+ * - 兼容：裸值传参（events on question...）
+ */
 function parseCli(argv: string[]) {
   const args = [...argv];
   let mode: Mode | undefined;
   let summary: boolean | undefined;
   let threadId: string | undefined;
+  let printSources = false;
   const rest: string[] = [];
   const isOn = (v: string) => !(v.toLowerCase() === 'off' || v.toLowerCase() === 'false' || v === '0');
 
@@ -39,6 +64,11 @@ function parseCli(argv: string[]) {
       if (typeof v === 'string') rest.push(v);
       continue;
     }
+    if (a === '--print-sources' || a.startsWith('--print-sources=')) {
+      const v = a.includes('=') ? a.split('=')[1] : 'on';
+      printSources = isOn(String(v));
+      continue;
+    }
     rest.push(a);
   }
 
@@ -54,12 +84,16 @@ function parseCli(argv: string[]) {
     }
   }
 
-  return { mode: mode ?? 'values', summary: summary ?? true, threadId, input: rest.join(' ').trim() };
+  return { mode: mode ?? 'events', summary: summary ?? false, threadId, printSources, input: rest.join(' ').trim() };
 }
 
+/**
+ * 主入口：基于 createAgentRuntime 运行 ReAct 交互。
+ */
 async function main() {
-  const { mode, summary, threadId: cliThreadId = "test-thread-001", input } = parseCli(process.argv.slice(2));
-  const query = input || '根据资料，查询角色定位是什么？';
+  const { mode, summary, printSources, threadId: cliThreadId = 'test-thread-001', input } = parseCli(process.argv.slice(2));
+  const stdinText = input ? '' : await readStdin();
+  const query = (input || stdinText || '根据资料，查询角色定位是什么？').trim();
   const runtime = await createAgentRuntime();
   const threadId = (cliThreadId && cliThreadId.trim()) || (THREAD_ID_FALLBACK && THREAD_ID_FALLBACK.trim()) || undefined;
 
@@ -68,6 +102,7 @@ async function main() {
   if (threadId) log.info(`threadId=${threadId}`);
   log.info('input:', query);
 
+  const collectedSources: Array<{ index: number; ref: string }> = [];
   const print = (e: any) => {
     switch (e.type) {
       case 'model-token':
@@ -81,6 +116,18 @@ async function main() {
         break;
       case 'tool-result':
         log.info('[tool-result]', { name: e.name, output: e.output });
+        // 收集 kb_search 的 sources 以便结尾打印
+        try {
+          if (e.name === 'kb_search') {
+            const raw = typeof e.output?.content === 'string' ? e.output.content : undefined;
+            if (raw) {
+              const j = JSON.parse(raw);
+              if (Array.isArray(j?.sources)) {
+                collectedSources.splice(0, collectedSources.length, ...j.sources);
+              }
+            }
+          }
+        } catch { /* ignore */ }
         break;
       case 'error':
         log.error(e.error);
@@ -93,21 +140,45 @@ async function main() {
     }
   };
 
-  if (mode === 'events') {
-    for await (const ev of runtime.streamEvents(query, { summary, threadId })) {
-      print(ev);
+  const controller = new AbortController();
+  const deadline = Number.isFinite(TIMEOUT_MS) && Number(TIMEOUT_MS) > 0 ? Number(TIMEOUT_MS) : undefined;
+  let timedOut = false;
+  let timer: NodeJS.Timeout | undefined;
+  if (deadline) {
+    timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+      log.error(`[timeout] 超过 TIMEOUT_MS=${deadline}ms`);
+      process.exitCode = 124;
+    }, deadline);
+  }
+
+  try {
+    if (mode === 'events') {
+      for await (const ev of runtime.streamEvents(query, { summary, threadId })) {
+        print(ev);
+        if (timedOut) break;
+      }
+    } else {
+      for await (const ev of runtime.streamValues(query, { summary, threadId })) {
+        print(ev);
+        if (timedOut) break;
+      }
     }
-  } else {
-    for await (const ev of runtime.streamValues(query, { summary, threadId })) {
-      // log.info('[streamValues]', { ev });
-      print(ev);
-    }
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 
   log.info('stream done.');
+  if (printSources && collectedSources.length > 0) {
+    log.info('Sources:');
+    for (const s of collectedSources) {
+      log.info(`- [${s.index}] ${s.ref}`);
+    }
+  }
 }
 
 main().catch((e) => {
-  console.error(e);
+  logger.error(e);
   process.exit(1);
 });

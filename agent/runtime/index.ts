@@ -8,7 +8,7 @@ import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import { makeChatModel } from '../llm/factory.js';
 import { getDefaultTools } from '../tools/registry.js';
 import { logger } from '../utils/logger.js';
-import type { StreamEvent, InteractionSegment, Summarizer } from '../stream/types.js';
+import type { StreamEvent, InteractionSegment, Summarizer, AssistantMessageEvent } from '../stream/types.js';
 import { observeValues, observeEvents } from '../stream/observer.js';
 import { createCheckpointer, type PersistenceMode } from './persistence.js';
 import { CHECKPOINT_MODE, THREAD_ID_FALLBACK } from '../config/env.js';
@@ -142,6 +142,47 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
     for await (const ev of gen) {
       if (!acc['current']) acc.start();
       acc.feed(ev);
+      // 在 round-end 前尝试补充引用列表（若答案未包含 [n] 且工具结果有 sources）
+      if (ev.type === 'round-end') {
+        try {
+          const seg = (acc as any).current as InteractionSegment;
+          const answer = String(seg?.assistantText || '');
+          const needCite = !/\[[0-9]+\]/.test(answer) && !/参考来源/.test(answer);
+          if (needCite && Array.isArray(seg?.toolCalls) && seg.toolCalls.length > 0) {
+            // 找到最近一次 kb_search 的结果
+            for (let i = seg.toolCalls.length - 1; i >= 0; i--) {
+              const call = seg.toolCalls[i];
+              if (!call?.result) continue;
+              const out = call.result as any;
+              const raw = typeof out?.content === 'string' ? out.content : undefined;
+              if (!raw || raw.length === 0) continue;
+              // 优先解析 JSON
+              let extra: string | undefined;
+              try {
+                const j = JSON.parse(raw);
+                if (Array.isArray(j?.sources) && j.sources.length > 0) {
+                  const refs = j.sources.map((s: any) => `- [${s?.index}] ${s?.ref ?? ''}`).join('\n');
+                  extra = `\n参考来源\n${refs}`;
+                }
+              } catch {
+                // 若不是 JSON，尝试从文本中提取“参考来源”段
+                const m = raw.split(/\r?\n/);
+                const idx = m.findIndex((line) => /参考来源/.test(line));
+                if (idx >= 0) {
+                  const tail = m.slice(idx).join('\n');
+                  extra = `\n${tail.trim()}`;
+                }
+              }
+              if (extra && extra.trim().length > 0) {
+                const ev2: AssistantMessageEvent = { type: 'assistant-message', ts: Date.now(), role: 'assistant', content: extra };
+                emit(ev2);
+                yield ev2;
+                break;
+              }
+            }
+          }
+        } catch { /* 忽略补充失败 */ }
+      }
       emit(ev);
       yield ev;
       if (ev.type === 'round-end') {

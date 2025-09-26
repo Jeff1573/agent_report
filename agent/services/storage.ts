@@ -316,6 +316,7 @@ export async function splitDocuments(
 
 import { makeKbEmbeddings as makeEmbeddings } from './embeddings.js'
 import { sanitizeCollectionName, generateRandomCollectionName } from '../config/env.js'
+import { logger } from '../utils/logger.js'
 
 /**
  * 确保 Chroma 集合存在。
@@ -452,6 +453,82 @@ export async function buildChromaRetriever(
     searchKwargs: searchType === 'mmr' ? ({ lambda: mmrLambda, fetchK } as any) : undefined
   })
   return retriever
+}
+
+/**
+ * 使用客户端重排（本地 MMR）完成检索。
+ * 流程：先用 similarity 取较大候选（fetchK_local），随后在客户端根据 query/doc 向量执行 MMR 贪心选择 k 条。
+ *
+ * @param {string} collectionName - 集合名
+ * @param {string} query - 查询语句
+ * @param {{ k: number; fetchK?: number; lambda?: number }} options - 重排参数
+ * @returns {Promise<Document[]>} 经过本地 MMR 选择后的文档数组
+ */
+export async function retrieveWithClientMMR(
+  collectionName: string,
+  query: string,
+  options: { k: number; fetchK?: number; lambda?: number }
+): Promise<Document[]> {
+  const k = typeof options.k === 'number' && options.k > 0 ? options.k : 4
+  const fetchK = typeof options.fetchK === 'number' && options.fetchK > 0 ? options.fetchK : Math.max(20, 4 * k)
+  const lambda = typeof options.lambda === 'number' ? options.lambda : 0.35
+
+  // 1) 先以 similarity 取候选
+  const baseRetriever = await buildChromaRetriever(collectionName, {
+    k: fetchK,
+    searchType: 'similarity'
+  })
+  const candidates = await baseRetriever.invoke(query)
+  if (!Array.isArray(candidates) || candidates.length === 0) return []
+
+  // 2) 计算向量（query/document），并执行 MMR 贪心选择
+  const embeddings = makeEmbeddings()
+  const qVec = await embeddings.embedQuery(query)
+  const texts = candidates.map((d) => String(d?.pageContent ?? ''))
+  const dVecs = await embeddings.embedDocuments(texts)
+
+  // 归一化余弦相似度工具
+  const norm = (v: number[]) => Math.sqrt(v.reduce((s, x) => s + x * x, 0) || 1)
+  const dot = (a: number[], b: number[]) => {
+    const m = Math.min(a.length, b.length)
+    let s = 0
+    for (let i = 0; i < m; i++) s += a[i] * b[i]
+    return s
+  }
+  const qn = norm(qVec)
+  const dvn = dVecs.map((v) => norm(v))
+  const simQ = (i: number) => dot(qVec, dVecs[i]) / (qn * dvn[i])
+  const simD = (i: number, j: number) => dot(dVecs[i], dVecs[j]) / (dvn[i] * dvn[j])
+
+  const selected: number[] = []
+  const remaining = new Set(candidates.map((_, idx) => idx))
+  // 先选与 query 最相似的一个作为种子
+  let best = -1
+  let bestScore = -Infinity
+  for (const idx of remaining) {
+    const s = simQ(idx)
+    if (s > bestScore) { bestScore = s; best = idx }
+  }
+  if (best >= 0) { selected.push(best); remaining.delete(best) }
+
+  while (selected.length < k && remaining.size > 0) {
+    let pick = -1
+    let pickScore = -Infinity
+    for (const idx of remaining) {
+      const relevance = simQ(idx)
+      // 多样性项：与已选集合的最大相似度
+      let maxSim = 0
+      for (const s of selected) {
+        maxSim = Math.max(maxSim, simD(idx, s))
+      }
+      const score = lambda * relevance - (1 - lambda) * maxSim
+      if (score > pickScore) { pickScore = score; pick = idx }
+    }
+    if (pick >= 0) { selected.push(pick); remaining.delete(pick) } else { break }
+  }
+
+  logger.debug('[client-mmr] selection', { k, fetchK, lambda, selected })
+  return selected.map((i) => candidates[i]).filter(Boolean)
 }
 
 /**

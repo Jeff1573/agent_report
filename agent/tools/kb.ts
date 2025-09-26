@@ -8,8 +8,9 @@
 import { z } from 'zod'
 import { tool } from '@langchain/core/tools'
 import { formatDocumentsAsString } from 'langchain/util/document'
-import { buildChromaRetriever, resolveCollectionName } from '../services/storage.js'
-import { KB_COLLECTION, RAG_CTX_CHAR_LIMIT } from '../config/env.js'
+import { buildChromaRetriever, resolveCollectionName, retrieveWithClientMMR } from '../services/storage.js'
+import { KB_COLLECTION, RAG_CTX_CHAR_LIMIT, KB_COLLECTION_WHITELIST, RERANK_ENABLED, RERANK_FETCHK, RERANK_LAMBDA } from '../config/env.js'
+import { logger } from '../utils/logger.js'
 
 /**
  * 截断多段文本到目标总字符限制。
@@ -56,38 +57,99 @@ function joinWithLimit(parts: string[], limit: number): string {
  */
 export const kbSearchTool = tool(
   async ({ query, k, collection, searchType, mmrLambda, fetchK }: { query: string; k?: number; collection?: string; searchType?: 'similarity' | 'mmr'; mmrLambda?: number; fetchK?: number }) => {
-    const usedCollection = resolveCollectionName(collection || KB_COLLECTION)
-    const retriever = await buildChromaRetriever(usedCollection, {
-      k: typeof k === 'number' ? k : 4,
-      searchType: searchType === 'mmr' ? 'mmr' : 'similarity',
-      mmrLambda: typeof mmrLambda === 'number' ? mmrLambda : 0.5,
-      fetchK: typeof fetchK === 'number' ? fetchK : undefined
-    })
+    // 1) 集合名上锁：默认仅允许 KB_COLLECTION；若配置白名单，则白名单 + KB_COLLECTION
+    const base = (KB_COLLECTION || '').trim()
+    if (!base) {
+      throw new Error('未配置 KB_COLLECTION，无法执行内部检索')
+    }
+    const whitelist = Array.isArray(KB_COLLECTION_WHITELIST) && KB_COLLECTION_WHITELIST.length > 0
+      ? new Set([base, ...KB_COLLECTION_WHITELIST])
+      : new Set([base])
+    const requested = (collection || '').trim()
+    const locked = whitelist.has(requested) && requested ? requested : base
+    if (requested && requested !== locked) {
+      logger.warn('[kb_search] 收到未授权的 collection，已替换为 KB_COLLECTION', { requested, used: locked })
+    }
+    const usedCollection = resolveCollectionName(locked)
 
-    const hits = await retriever.invoke(query)
-    const sources = Array.from(
-      new Set(
-        hits
-          .map((d: any) => String(d?.metadata?.source || ''))
-          .filter((s: string) => s && s.trim().length > 0)
-      )
-    )
-    const context = joinWithLimit([formatDocumentsAsString(hits)], RAG_CTX_CHAR_LIMIT)
-    const lines = [
-      `【KB集合】${usedCollection}`,
-      `【检索类型】${searchType === 'mmr' ? 'mmr' : 'similarity'}，topK=${typeof k === 'number' ? k : 4}`,
-      '',
-      '【上下文】',
-      context,
-      '',
-      '【参考来源】',
-      ...sources.map((s, i) => `- [${i + 1}] ${s}`)
-    ]
-    return lines.join('\n')
+    // 2) 规范化参数：k 做收敛（4~8），未指定 searchType 时默认 mmr(client)
+    const rawTopK = typeof k === 'number' ? k : 4
+    const topK = Math.max(4, Math.min(8, rawTopK))
+    const wantMMRExplicit = searchType === 'mmr'
+    const wantSimilarityExplicit = searchType === 'similarity'
+    const defaultToClientMMR = !wantSimilarityExplicit // 未指定或显式要求 mmr → 默认走 mmr(client)
+    let usedType: 'similarity' | 'mmr' | 'mmr(client)' = defaultToClientMMR ? 'mmr(client)' : (wantSimilarityExplicit ? 'similarity' : 'mmr')
+    let hits: any[] = []
+
+    // 3) 当“未指定/显式要求 mmr”且启用客户端重排时，优先走客户端 MMR；否则按后端能力或 similarity 尝试
+    if (defaultToClientMMR && RERANK_ENABLED) {
+      try {
+        const lambda = typeof mmrLambda === 'number' ? mmrLambda : (typeof RERANK_LAMBDA === 'number' ? RERANK_LAMBDA : 0.35)
+        const fetchKLocal = typeof fetchK === 'number' && fetchK > 0 ? fetchK : (typeof RERANK_FETCHK === 'number' && RERANK_FETCHK > 0 ? RERANK_FETCHK : Math.max(20, 4 * topK))
+        hits = await retrieveWithClientMMR(usedCollection, query, { k: topK, fetchK: fetchKLocal, lambda })
+        usedType = 'mmr(client)'
+      } catch (e) {
+        logger.warn('[kb_search] 客户端 MMR 失败，回退 similarity', { error: (e as Error)?.message })
+        const retriever = await buildChromaRetriever(usedCollection, { k: topK, searchType: 'similarity' })
+        hits = await retriever.invoke(query)
+        usedType = 'similarity'
+      }
+    } else {
+      const retriever = await buildChromaRetriever(usedCollection, {
+        k: topK,
+        searchType: wantSimilarityExplicit ? 'similarity' : 'mmr',
+        mmrLambda: typeof mmrLambda === 'number' ? mmrLambda : 0.5,
+        fetchK: typeof fetchK === 'number' ? fetchK : undefined
+      })
+      hits = await retriever.invoke(query)
+      usedType = wantSimilarityExplicit ? 'similarity' : 'mmr'
+    }
+    // 4) 结构化 JSON 输出
+    const sourceList: string[] = Array.from(new Set(
+      hits.map((d: any) => String(d?.metadata?.source || '')).filter((s: string) => s && s.trim().length > 0)
+    ))
+
+    const indexOfSource = (s: string) => sourceList.findIndex((x) => x === s) + 1
+
+    // 将上下文裁剪到预算内，并保留与来源的索引映射
+    const contextText = joinWithLimit([formatDocumentsAsString(hits)], RAG_CTX_CHAR_LIMIT)
+    const ctxItems: Array<{ text: string; sourceIndex: number }> = []
+    {
+      let used = 0
+      const budget = Math.max(500, RAG_CTX_CHAR_LIMIT)
+      for (const d of hits) {
+        const text: string = String(d?.pageContent || '')
+        const src: string = String(d?.metadata?.source || '')
+        if (!text) continue
+        const rest = budget - used
+        if (rest <= 0) break
+        const pick = text.length <= rest ? text : text.slice(0, Math.max(0, rest))
+        const si = src ? indexOfSource(src) : 0
+        ctxItems.push({ text: pick, sourceIndex: si > 0 ? si : 1 })
+        used += pick.length
+        if (used >= budget) break
+      }
+    }
+
+    const payload = {
+      collection: usedCollection,
+      search: {
+        type: usedType,
+        k: topK,
+        ...(defaultToClientMMR ? { fetchK: typeof fetchK === 'number' && fetchK > 0 ? fetchK : (typeof RERANK_FETCHK === 'number' && RERANK_FETCHK > 0 ? RERANK_FETCHK : Math.max(20, 4 * topK)) } : {}),
+        ...(defaultToClientMMR ? { lambda: typeof mmrLambda === 'number' ? mmrLambda : (typeof RERANK_LAMBDA === 'number' ? RERANK_LAMBDA : 0.35) } : {})
+      },
+      context: ctxItems,
+      contextText,
+      sources: sourceList.map((ref, i) => ({ index: i + 1, ref })),
+      citation_guidelines: '回答时在关键句后用 [n] 引用上方 sources 的 index；证据不足须说明，严禁编造来源或编号；不要原样粘贴 JSON。'
+    }
+
+    return JSON.stringify(payload)
   },
   {
     name: 'kb_search',
-    description: '检索内部知识库（Chroma）。支持 similarity 与 mmr；建议 mmr 搭配较大的 fetchK（如 32 或 4*k）以提升多样性。',
+    description: '检索内部知识库（Chroma）。未指定时默认使用 mmr(client)（客户端重排），k 收敛为 4~8；当 searchType=similarity 时按相似度检索。输出为严格 JSON 字符串（见字段：collection/search/context/contextText/sources/citation_guidelines）。使用规范：最终回答必须在关键结论后用 [n] 引用 sources 的 index；证据不足须说明；严禁编造来源或编号；不要原样粘贴 JSON，仅用其中信息组织自然语言回答。建议 mmr 搭配较大的 fetchK（如 32 或 4*k）以提升多样性。',
     schema: z.object({
       query: z.string(),
       k: z.number().int().min(1).max(20).optional(),

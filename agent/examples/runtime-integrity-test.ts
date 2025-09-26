@@ -169,6 +169,40 @@ async function main() {
   }
   results.push({ name: 'MMR retriever 直连轻验', r: mmrResult })
 
+  // 9) Client MMR JSON 输出验证（应返回严格 JSON 且包含 sources）
+  results.push({
+    name: 'Client MMR JSON 输出',
+    r: await runCase('Client MMR JSON 输出', async () => {
+      const rt = await createAgentRuntime()
+      let seen = false
+      for await (const ev of rt.streamEvents('请先用 kb_search（默认参数）回答“角色定位是什么？”，答案需带引用。', { threadId })) {
+        if (ev.type === 'tool-result' && (ev as any)?.name === 'kb_search') {
+          const raw = String((ev as any)?.output?.content ?? '')
+          const j = JSON.parse(raw)
+          if (!Array.isArray(j?.sources) || j.sources.length === 0) throw new Error('sources 为空')
+          seen = true
+          break
+        }
+      }
+      assert(seen, '未捕获到 kb_search 的 JSON 输出')
+    }, timeout),
+  })
+
+  // 10) 自动补充来源兜底（若答案未带 [n]，应追加“参考来源”assistant-message）
+  results.push({
+    name: '自动补充来源兜底',
+    r: await runCase('自动补充来源兜底', async () => {
+      const rt = await createAgentRuntime()
+      let hasCiteMsg = false
+      for await (const ev of rt.streamEvents('从我的资料库中找到关于角色定位的定义内容（请在关键句后用 [n] 引用，并在答案末尾附上参考来源列表）', { threadId })) {
+        if (ev.type === 'assistant-message' && /参考来源/.test(String((ev as any)?.content || ''))) {
+          hasCiteMsg = true
+        }
+      }
+      assert(hasCiteMsg, '未检测到追加的“参考来源”消息')
+    }, timeout),
+  })
+
   // 8) runOnce 兜底路径
   results.push({
     name: 'runOnce 兜底',
