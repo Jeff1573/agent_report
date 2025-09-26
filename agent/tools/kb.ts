@@ -43,13 +43,25 @@ function joinWithLimit(parts: string[], limit: number): string {
  * - searchType: similarity | mmr（默认 similarity）
  * - mmrLambda: 当 searchType=mmr 时的折中系数（0~1，默认 0.5）
  */
+/**
+ * kb_search 工具：支持 similarity / mmr 两种检索；当使用 mmr 时可选传入 fetchK 放大候选集。
+ *
+ * @param {object} params - 调用参数
+ * @param {string} params.query - 查询字符串
+ * @param {number=} params.k - 召回条数，默认 4
+ * @param {string=} params.collection - 集合名，默认取环境变量 KB_COLLECTION 或生成名
+ * @param {('similarity'|'mmr')=} params.searchType - 检索类型，默认 similarity
+ * @param {number=} params.mmrLambda - MMR 折中系数（0~1），默认 0.5
+ * @param {number=} params.fetchK - 当 searchType=mmr 时的候选规模，默认 max(32, 4*k)
+ */
 export const kbSearchTool = tool(
-  async ({ query, k, collection, searchType, mmrLambda }: { query: string; k?: number; collection?: string; searchType?: 'similarity' | 'mmr'; mmrLambda?: number }) => {
+  async ({ query, k, collection, searchType, mmrLambda, fetchK }: { query: string; k?: number; collection?: string; searchType?: 'similarity' | 'mmr'; mmrLambda?: number; fetchK?: number }) => {
     const usedCollection = resolveCollectionName(collection || KB_COLLECTION)
     const retriever = await buildChromaRetriever(usedCollection, {
       k: typeof k === 'number' ? k : 4,
       searchType: searchType === 'mmr' ? 'mmr' : 'similarity',
-      mmrLambda: typeof mmrLambda === 'number' ? mmrLambda : 0.5
+      mmrLambda: typeof mmrLambda === 'number' ? mmrLambda : 0.5,
+      fetchK: typeof fetchK === 'number' ? fetchK : undefined
     })
 
     const hits = await retriever.invoke(query)
@@ -75,13 +87,14 @@ export const kbSearchTool = tool(
   },
   {
     name: 'kb_search',
-    description: '检索内部知识库（Chroma）。当问题涉及私有文档/项目资料时优先使用。',
+    description: '检索内部知识库（Chroma）。支持 similarity 与 mmr；建议 mmr 搭配较大的 fetchK（如 32 或 4*k）以提升多样性。',
     schema: z.object({
       query: z.string(),
       k: z.number().int().min(1).max(20).optional(),
       collection: z.string().optional(),
       searchType: z.enum(['similarity', 'mmr']).optional(),
-      mmrLambda: z.number().min(0).max(1).optional()
+      mmrLambda: z.number().min(0).max(1).optional(),
+      fetchK: z.number().int().min(8).max(256).optional()
     })
   }
 )

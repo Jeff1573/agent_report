@@ -419,6 +419,11 @@ export interface RetrieverOptions {
   searchType?: 'similarity' | 'mmr'
   /** 当 searchType=mmr 时的折中系数（0~1，默认 0.5） */
   mmrLambda?: number
+  /**
+   * 当 searchType=mmr 时的候选集规模（默认 max(32, 4*k)）。
+   * fetchK 越大，MMR 在“多样性”上的效果越明显，但会略增时延。
+   */
+  fetchK?: number
   /** 元数据过滤（保留占位，初期可不实现） */
   where?: Record<string, unknown>
 }
@@ -438,10 +443,13 @@ export async function buildChromaRetriever(
   const store = await openChromaReadonly(embeddings, sanitizeCollectionName(collectionName))
   const k = typeof options.k === 'number' && options.k > 0 ? options.k : 4
   const searchType = (options.searchType === 'mmr' ? 'mmr' : 'similarity') as 'similarity' | 'mmr'
+  // 仅当 mmr 时透传 { lambda, fetchK }；其余保持 similarity 默认行为
+  const mmrLambda = typeof options.mmrLambda === 'number' ? options.mmrLambda : 0.5
+  const fetchK = typeof options.fetchK === 'number' && options.fetchK > 0 ? options.fetchK : Math.max(32, 4 * k)
   const retriever = store.asRetriever({
     k,
     searchType,
-    searchKwargs: searchType === 'mmr' ? { lambda: typeof options.mmrLambda === 'number' ? options.mmrLambda : 0.5 } : undefined
+    searchKwargs: searchType === 'mmr' ? ({ lambda: mmrLambda, fetchK } as any) : undefined
   })
   return retriever
 }
