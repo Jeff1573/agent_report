@@ -100,15 +100,26 @@ export async function createMCPClient(configPath?: string): Promise<MultiServerM
  * 获取所有MCP工具
  */
 export async function getMCPTools(configPath?: string): Promise<AnyTool[]> {
+  let client: MultiServerMCPClient | undefined;
   try {
-    const client = await createMCPClient(configPath);
+    client = await createMCPClient(configPath);
     const tools = await client.getTools();
 
     logger.info(`Loaded ${tools.length} MCP tools`);
     return tools;
   } catch (error) {
     logger.error('Failed to load MCP tools:', error);
-    return [];
+    throw error; // 重新抛出错误，让调用者决定如何处理
+  } finally {
+    // 确保客户端连接被正确关闭
+    if (client) {
+      try {
+        await client.close();
+        logger.info('MCP client connection closed');
+      } catch (closeError) {
+        logger.error('Error closing MCP client:', closeError);
+      }
+    }
   }
 }
 
