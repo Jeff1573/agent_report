@@ -155,15 +155,32 @@ async function main() {
 
   try {
     if (mode === 'events') {
+      let eventCount = 0;
       for await (const ev of runtime.streamEvents(query, { summary, threadId })) {
+        eventCount++;
         print(ev);
-        if (timedOut) break;
+        if (timedOut) {
+          log.warn(`Breaking due to timeout after ${eventCount} events`);
+          break;
+        }
       }
+      log.info(`Processed ${eventCount} events`);
     } else {
+      let eventCount = 0;
       for await (const ev of runtime.streamValues(query, { summary, threadId })) {
+        eventCount++;
         print(ev);
-        if (timedOut) break;
+        if (timedOut) {
+          log.warn(`Breaking due to timeout after ${eventCount} events`);
+          break;
+        }
       }
+      log.info(`Processed ${eventCount} events`);
+    }
+  } catch (error) {
+    log.error('Stream processing error:', error);
+    if (timedOut) {
+      log.error('Stream was aborted due to timeout');
     }
   } finally {
     if (timer) clearTimeout(timer);

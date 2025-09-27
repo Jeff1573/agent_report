@@ -7,6 +7,7 @@
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import { makeChatModel } from '../llm/factory.js';
 import { getDefaultTools } from '../tools/registry.js';
+import { getSystemMessage } from '../config/prompts.js';
 import { logger } from '../utils/logger.js';
 import type { StreamEvent, InteractionSegment, Summarizer, AssistantMessageEvent } from '../stream/types.js';
 import { observeValues, observeEvents } from '../stream/observer.js';
@@ -137,7 +138,11 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
   };
 
   async function runOnce(input: string): Promise<string> {
-    const res = await llm.invoke([{ role: 'user', content: input }]);
+    const messagesWithSystem = [
+      { role: 'system', content: getSystemMessage() },
+      { role: 'user', content: input }
+    ];
+    const res = await llm.invoke(messagesWithSystem);
     const out = (res as any)?.content ?? '';
     return typeof out === 'string' ? out : Array.isArray(out) ? out.map((c: any) => (typeof c === 'string' ? c : c?.text ?? '')).join('') : String(out ?? '');
   }
@@ -183,7 +188,7 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
                 const ev2: AssistantMessageEvent = { type: 'assistant-message', ts: Date.now(), role: 'assistant', content: extra };
                 emit(ev2);
                 yield ev2;
-                break;
+                // 不要break，继续处理剩余事件
               }
             }
           }
@@ -202,7 +207,11 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
   }
 
   async function* streamValues(input: string, options?: StreamOptions): AsyncGenerator<StreamEvent> {
-    const inputs = { messages: [{ role: 'user', content: input }] };
+    const messagesWithSystem = [
+      { role: 'system', content: getSystemMessage() },
+      { role: 'user', content: input }
+    ];
+    const inputs = { messages: messagesWithSystem };
     const threadId = (options?.threadId && typeof options.threadId === 'string' && options.threadId.trim())
       ? options.threadId.trim()
       : (THREAD_ID_FALLBACK || undefined);
@@ -211,7 +220,11 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
   }
 
   async function* streamEvents(input: string, options?: StreamOptions): AsyncGenerator<StreamEvent> {
-    const inputs = { messages: [{ role: 'user', content: input }] };
+    const messagesWithSystem = [
+      { role: 'system', content: getSystemMessage() },
+      { role: 'user', content: input }
+    ];
+    const inputs = { messages: messagesWithSystem };
     const threadId = (options?.threadId && typeof options.threadId === 'string' && options.threadId.trim())
       ? options.threadId.trim()
       : (THREAD_ID_FALLBACK || undefined);
