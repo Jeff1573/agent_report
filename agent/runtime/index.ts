@@ -94,7 +94,13 @@ class SegmentAccumulator {
 export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<AgentRuntime> {
   let tools: unknown[];
   try {
-    tools = Array.isArray(config.tools) && config.tools.length > 0 ? config.tools : getDefaultTools();
+    // 检查是否提供了自定义工具
+    if (Array.isArray(config.tools) && config.tools.length > 0) {
+      tools = config.tools;
+    } else {
+      // 使用异步方式加载默认工具（包含MCP工具）
+      tools = await getDefaultTools();
+    }
     logger.info(`Loaded ${tools.length} tools successfully`);
   } catch (error) {
     logger.error('Failed to load tools:', error);
