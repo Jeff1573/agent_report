@@ -184,6 +184,13 @@ async function main() {
     }
   } finally {
     if (timer) clearTimeout(timer);
+    // 清理运行时资源
+    try {
+      await runtime.close();
+      log.info('Runtime closed successfully');
+    } catch (closeError) {
+      log.error('Error closing runtime:', closeError);
+    }
   }
 
   log.info('stream done.');

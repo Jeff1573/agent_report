@@ -27,6 +27,9 @@ export interface MCPConfig {
 /** 工具类型占位（LangChain Tool 接口为结构化对象） */
 export type AnyTool = unknown;
 
+/** 重新导出MCP客户端类型 */
+export type { MultiServerMCPClient } from '@langchain/mcp-adapters';
+
 /**
  * 读取MCP配置文件
  * @param configPath MCP配置文件路径，默认为 ~/.cursor/mcp.json
@@ -97,29 +100,24 @@ export async function createMCPClient(configPath?: string): Promise<MultiServerM
 }
 
 /**
- * 获取所有MCP工具
+ * 获取所有MCP工具和客户端实例
  */
-export async function getMCPTools(configPath?: string): Promise<AnyTool[]> {
-  let client: MultiServerMCPClient | undefined;
+export async function getMCPTools(configPath?: string): Promise<{ tools: AnyTool[], client: MultiServerMCPClient }> {
+  const client = await createMCPClient(configPath);
   try {
-    client = await createMCPClient(configPath);
     const tools = await client.getTools();
 
     logger.info(`Loaded ${tools.length} MCP tools`);
-    return tools;
+    return { tools, client };
   } catch (error) {
     logger.error('Failed to load MCP tools:', error);
-    throw error; // 重新抛出错误，让调用者决定如何处理
-  } finally {
-    // 确保客户端连接被正确关闭
-    if (client) {
-      try {
-        await client.close();
-        logger.info('MCP client connection closed');
-      } catch (closeError) {
-        logger.error('Error closing MCP client:', closeError);
-      }
+    // 出错时也要关闭客户端
+    try {
+      await client.close();
+    } catch (closeError) {
+      logger.error('Error closing MCP client after failure:', closeError);
     }
+    throw error; // 重新抛出错误，让调用者决定如何处理
   }
 }
 

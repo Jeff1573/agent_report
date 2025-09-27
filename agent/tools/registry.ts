@@ -15,7 +15,7 @@ export type AnyTool = unknown;
 
 /**
  * 返回默认工具集合（按优先级排序）。
- * 优先级：内部知识库 > MCP工具 > 外部搜索
+ * 优先级：内部知识库 > 外部搜索（不包含MCP工具，MCP工具由运行时单独管理）
  */
 export async function getDefaultTools(): Promise<AnyTool[]> {
   const tools: AnyTool[] = [];
@@ -33,18 +33,7 @@ export async function getDefaultTools(): Promise<AnyTool[]> {
     throw new Error(`Failed to load core kb_search tool: ${error}`);
   }
 
-  // 2. MCP服务器工具（第二优先级）
-  try {
-    const mcpTools = await getMCPTools();
-    tools.push(...mcpTools);
-    logger.info(`Loaded ${mcpTools.length} MCP tools`);
-  } catch (error) {
-    const errorMsg = `MCP tools: ${error}`;
-    errors.push(errorMsg);
-    logger.warn(errorMsg); // MCP工具失败不应该阻止系统启动
-  }
-
-  // 3. 外部搜索工具（兜底）
+  // 2. 外部搜索工具（兜底）
   try {
     tools.push(tavilyTool);
     logger.info('Loaded tavily tool');

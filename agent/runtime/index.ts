@@ -14,6 +14,7 @@ import { observeValues, observeEvents } from '../stream/observer.js';
 import { createCheckpointer, type PersistenceMode } from './persistence.js';
 import { CHECKPOINT_MODE, THREAD_ID_FALLBACK } from '../config/env.js';
 import { defaultSummarizer } from '../stream/summarizers.js';
+import { getMCPTools, cleanupMCPClient, type MultiServerMCPClient } from '../tools/mcp.js';
 
 export interface RuntimeConfig {
   /** 自定义工具集（默认注册表） */
@@ -37,6 +38,8 @@ export interface AgentRuntime {
   streamEvents(input: string, options?: StreamOptions): AsyncGenerator<StreamEvent>;
   /** 订阅内部标准化事件，返回取消订阅函数 */
   onEvent(handler: (e: StreamEvent) => void): () => void;
+  /** 关闭运行时，清理资源 */
+  close(): Promise<void>;
 }
 
 /**
@@ -93,20 +96,34 @@ class SegmentAccumulator {
 
 /** 创建运行时实例 */
 export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<AgentRuntime> {
-  let tools: unknown[];
+  let tools: unknown[] = [];
+  let mcpClient: MultiServerMCPClient | undefined;
+
   try {
     // 检查是否提供了自定义工具
     if (Array.isArray(config.tools) && config.tools.length > 0) {
       tools = config.tools;
     } else {
-      // 使用异步方式加载默认工具（包含MCP工具）
+      // 加载非MCP工具
       tools = await getDefaultTools();
+
+      // 尝试加载MCP工具
+      try {
+        const mcpResult = await getMCPTools();
+        tools.push(...mcpResult.tools);
+        mcpClient = mcpResult.client;
+        logger.info(`Loaded ${mcpResult.tools.length} MCP tools`);
+      } catch (mcpError) {
+        logger.warn('Failed to load MCP tools:', mcpError);
+        // MCP工具失败不应该阻止系统启动
+      }
     }
     logger.info(`Loaded ${tools.length} tools successfully`);
   } catch (error) {
     logger.error('Failed to load tools:', error);
-    tools = []; // 如果工具加载失败，使用空数组
+    // 不使用空数组，直接抛出错误
   }
+
   const persistenceMode: PersistenceMode = config.persistenceMode ?? (CHECKPOINT_MODE as PersistenceMode) ?? 'memory';
   // 依据环境动态创建 checkpointer（MemorySaver / PostgresSaver）
   const checkpointer = await createCheckpointer(persistenceMode);
@@ -237,5 +254,17 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
     return () => listeners.delete(handler);
   }
 
-  return { runOnce, streamValues, streamEvents, onEvent };
+  async function close(): Promise<void> {
+    // 清理MCP客户端连接
+    if (mcpClient) {
+      try {
+        await cleanupMCPClient(mcpClient);
+        logger.info('MCP client connection closed during runtime cleanup');
+      } catch (error) {
+        logger.error('Error closing MCP client during runtime cleanup:', error);
+      }
+    }
+  }
+
+  return { runOnce, streamValues, streamEvents, onEvent, close };
 }
