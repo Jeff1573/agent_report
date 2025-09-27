@@ -21,29 +21,37 @@ export async function getDefaultTools(): Promise<AnyTool[]> {
   const tools: AnyTool[] = [];
   const errors: string[] = [];
 
+  // 1. 内部知识库检索（最高优先级）
   try {
-    // 1. 内部知识库检索（最高优先级）
     tools.push(kbSearchTool);
     logger.info('Loaded kb_search tool');
   } catch (error) {
-    errors.push(`kb_search: ${error}`);
+    const errorMsg = `kb_search: ${error}`;
+    errors.push(errorMsg);
+    logger.error(errorMsg);
+    // 内部知识库失败时应该抛出错误，因为这是核心功能
+    throw new Error(`Failed to load core kb_search tool: ${error}`);
   }
 
+  // 2. MCP服务器工具（第二优先级）
   try {
-    // 2. MCP服务器工具（第二优先级）
     const mcpTools = await getMCPTools();
     tools.push(...mcpTools);
     logger.info(`Loaded ${mcpTools.length} MCP tools`);
   } catch (error) {
-    errors.push(`MCP tools: ${error}`);
+    const errorMsg = `MCP tools: ${error}`;
+    errors.push(errorMsg);
+    logger.warn(errorMsg); // MCP工具失败不应该阻止系统启动
   }
 
+  // 3. 外部搜索工具（兜底）
   try {
-    // 3. 外部搜索工具（兜底）
     tools.push(tavilyTool);
     logger.info('Loaded tavily tool');
   } catch (error) {
-    errors.push(`tavily: ${error}`);
+    const errorMsg = `tavily: ${error}`;
+    errors.push(errorMsg);
+    logger.warn(errorMsg); // 外部工具失败也不应该阻止系统启动
   }
 
   if (errors.length > 0) {
