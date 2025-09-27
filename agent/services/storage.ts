@@ -36,6 +36,7 @@ import {
 } from '../config/env.js'
 import { Buffer } from 'node:buffer'
 import { Stats } from 'node:fs'
+import enrichDocuments from './metadata.js'
 
 export interface StoredFileMeta {
   /** 原始上传文件名 */
@@ -243,6 +244,14 @@ export async function loadDocumentsFromRaw(relativePath: string): Promise<Docume
   }
   const abs = resolveRawPath(relativePath)
   const ext = path.extname(abs).toLowerCase()
+  // 采集文件时间，补充到元数据（ISO 格式）。
+  let stat: Stats | undefined
+  try {
+    stat = (await fs.stat(abs)) as Stats
+  } catch (e) {
+    // 忽略 stat 失败，不阻断加载
+    stat = undefined
+  }
   let docs: Document[] = []
   if (ext === '.pdf') {
     const { PDFLoader } = await import('@langchain/community/document_loaders/fs/pdf')
@@ -256,17 +265,25 @@ export async function loadDocumentsFromRaw(relativePath: string): Promise<Docume
   } else {
     throw new Error(`暂不支持的文件类型：${ext}`)
   }
-  return docs.map((doc, index) =>
+  const enriched = docs.map((doc, index) =>
     new Document({
       pageContent: doc.pageContent,
       metadata: {
         ...(doc.metadata ?? {}),
         source: abs,
         originalFile: relativePath,
-        rawIndex: index
+        rawIndex: index,
+        ...(stat
+          ? {
+              fileCreatedAt: new Date(stat.birthtimeMs || stat.ctimeMs || stat.mtimeMs || Date.now()).toISOString(),
+              fileUpdatedAt: new Date(stat.mtimeMs || stat.ctimeMs || stat.birthtimeMs || Date.now()).toISOString()
+            }
+          : {})
       }
     })
   )
+  // 先对“整文”层面富化一次（module/lang/version/updatedAt/tags），后续切块会继承这些字段
+  return enrichDocuments(enriched)
 }
 
 /**
@@ -326,13 +343,14 @@ import { logger } from '../utils/logger.js'
  */
 async function ensureChromaCollection(embeddings: OpenAIEmbeddings | GoogleGenerativeAIEmbeddings, collectionName: string) {
   try {
-    return await Chroma.fromExistingCollection(embeddings as any, {
+    return await Chroma.fromExistingCollection(embeddings, {
       collectionName,
       url: CHROMA_URL || undefined
     })
   } catch (error) {
     if (error instanceof Error && error.message.includes('does not exist')) {
-      return await Chroma.fromDocuments([], embeddings as any, {
+      // 创建空集合时确保嵌入函数正确传递
+      return await Chroma.fromDocuments([], embeddings, {
         collectionName,
         url: CHROMA_URL || undefined
       })
@@ -356,7 +374,7 @@ export async function openChromaReadonly(
     throw new Error('未配置 CHROMA_URL，无法连接 Chroma 服务')
   }
   try {
-    return await Chroma.fromExistingCollection(embeddings as any, {
+    return await Chroma.fromExistingCollection(embeddings, {
       collectionName,
       url: CHROMA_URL || undefined
     })
@@ -394,20 +412,63 @@ export async function upsertToChroma(
 
   // 创建向量嵌入实例
   const embeddings = makeEmbeddings()
-  // 检查集合是否存在
-  const store = await ensureChromaCollection(embeddings, collectionName)
-  // 生成文档ID
-  const ids = docs.map((doc) => {
-    const fromMeta = (doc.metadata as any)?.chunkId
-    if (typeof fromMeta === 'string' && fromMeta.length > 0) return fromMeta
-    return crypto
-      .createHash('sha256')
-      .update(doc.pageContent)
-      .digest('hex')
-      .slice(0, 16)
-  })
-  // 写入向量库
-  await store.addDocuments(docs, { ids })
+  
+  // 检查批量嵌入是否正常工作（特别是 Gemini）
+  let useBatchEmbedding = true
+  if (KB_EMBED_PROVIDER === 'gemini') {
+    try {
+      // 测试小批量嵌入
+      const testVectors = await embeddings.embedDocuments([docs[0].pageContent])
+      if (!testVectors || testVectors.length === 0 || testVectors[0].length === 0) {
+        logger.warn('[upsertToChroma] Gemini 批量嵌入返回空向量，将使用单个嵌入模式')
+        useBatchEmbedding = false
+      }
+    } catch (e) {
+      logger.warn('[upsertToChroma] Gemini 批量嵌入测试失败，将使用单个嵌入模式', { error: (e as Error).message })
+      useBatchEmbedding = false
+    }
+  }
+  
+  if (useBatchEmbedding) {
+    // 正常批量模式
+    const store = await ensureChromaCollection(embeddings, collectionName)
+    const ids = docs.map((doc) => {
+      const fromMeta = (doc.metadata as any)?.chunkId
+      if (typeof fromMeta === 'string' && fromMeta.length > 0) return fromMeta
+      return crypto
+        .createHash('sha256')
+        .update(doc.pageContent)
+        .digest('hex')
+        .slice(0, 16)
+    })
+    await store.addDocuments(docs, { ids })
+  } else {
+    // 单个嵌入模式（解决 Gemini 批量嵌入 bug）
+    logger.info('[upsertToChroma] 使用单个嵌入模式处理文档', { count: docs.length })
+    const store = await ensureChromaCollection(embeddings, collectionName)
+    
+    for (let i = 0; i < docs.length; i++) {
+      const doc = docs[i]
+      const fromMeta = (doc.metadata as any)?.chunkId
+      const id = (typeof fromMeta === 'string' && fromMeta.length > 0) 
+        ? fromMeta
+        : crypto.createHash('sha256').update(doc.pageContent).digest('hex').slice(0, 16)
+      
+      // 单个文档嵌入
+      const vector = await embeddings.embedQuery(doc.pageContent)
+      if (vector.length === 0) {
+        throw new Error(`文档 ${i+1} 嵌入失败：返回空向量`)
+      }
+      
+      // 单个添加到向量库
+      await store.addVectors([vector], [doc], { ids: [id] })
+      
+      if ((i + 1) % 10 === 0) {
+        logger.info(`[upsertToChroma] 已处理 ${i + 1}/${docs.length} 个文档`)
+      }
+    }
+  }
+  
   return {
     collectionName,
     documents: docs.length
@@ -454,7 +515,10 @@ export async function buildChromaRetriever(
   const retriever = store.asRetriever({
     k,
     searchType,
-    searchKwargs: searchType === 'mmr' ? ({ lambda: mmrLambda, fetchK } as any) : undefined
+    searchKwargs:
+      searchType === 'mmr'
+        ? ({ lambda: mmrLambda, fetchK, filter: options.where, where: options.where } as any)
+        : ({ filter: options.where, where: options.where } as any)
   })
   return retriever
 }
@@ -471,7 +535,7 @@ export async function buildChromaRetriever(
 export async function retrieveWithClientMMR(
   collectionName: string,
   query: string,
-  options: { k: number; fetchK?: number; lambda?: number }
+  options: { k: number; fetchK?: number; lambda?: number; where?: Record<string, unknown> }
 ): Promise<Document[]> {
   const k = typeof options.k === 'number' && options.k > 0 ? options.k : 4
   const fetchK = typeof options.fetchK === 'number' && options.fetchK > 0 ? options.fetchK : Math.max(20, 4 * k)
@@ -480,7 +544,8 @@ export async function retrieveWithClientMMR(
   // 1) 先以 similarity 取候选
   const baseRetriever = await buildChromaRetriever(collectionName, {
     k: fetchK,
-    searchType: 'similarity'
+    searchType: 'similarity',
+    where: options.where
   })
   const candidates = await baseRetriever.invoke(query)
   if (!Array.isArray(candidates) || candidates.length === 0) return []

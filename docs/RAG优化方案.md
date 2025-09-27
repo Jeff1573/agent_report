@@ -23,8 +23,11 @@
 2. Cross-Encoder 重排
 - 先向量召回 Top-20，再用重排器选 Top-3~5 入上下文
 - 理由：向量相似度只看“像不像”，重排看“有没有直接回答问题”，更接近最终需求。
-3. 元数据过滤
-- 按模块/版本/语言/更新时间等字段在检索前过滤（where 预过滤）
+3. 元数据过滤（已落地最小可行版）
+- 入库阶段写入字段：`module`、`lang`、`version`、`updatedAt`、`tags`（按路径/Frontmatter/正文启发式推断）。
+- 检索前可传 where 对象预过滤（兼容 `{ where, filter }` 透传至 Chroma）：
+  - 示例：`{ module: 'payments', lang: 'zh' }`
+  - 命中为空时自动退化为“无过滤重试”，并在返回 JSON `search` 字段标注 `fallback: true`。
 - 理由：先缩小搜索面，再做语义检索，精准度显著提升。
 4. 结构化上下文拼接
 - 每段保留：标题/小节/版本/更新时间/来源；顶部给2行“检索摘要”
@@ -96,9 +99,10 @@
   - `mmrLambda`: 0.35（可调 0.3–0.5）
   - `k`: 8（可按 token 预算 6–10）
   - `fetchK`: 32（或 `4*k`）
+  - `where`: 元数据过滤对象（如 `{ module: 'payments', lang: 'zh' }`）
 
 - 示例调用（提示语）
-  - “请先用 kb_search，searchType=mmr, mmrLambda=0.35, fetchK=32, k=8 检索，再结合检索结果回答，并在答案中引用来源编号。”
+  - “请先用 kb_search，searchType=mmr, mmrLambda=0.35, fetchK=32, k=8，where={ module: 'payments', lang: 'zh' } 检索；若无命中允许退化为不加过滤；再结合检索结果回答，并在答案中引用来源编号。”
 
 - 注意事项
   - 当后端/驱动暂不支持 MMR 时，模型可能自动补发一次 `similarity` 检索作为回退；这是期望内行为。

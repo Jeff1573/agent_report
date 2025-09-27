@@ -18,7 +18,10 @@
     "rag:ask": "tsx examples/rag-local-ask.ts",
     "demo:kb:chroma": "tsx examples/kb-chroma-quickcheck.ts",
     "demo:kb:list": "tsx examples/chroma-list-collections.ts",
-    "demo:integrity": "tsx examples/runtime-integrity-test.ts"
+    "demo:kb:where": "tsx examples/kb-where-check.ts",
+    "demo:integrity": "tsx examples/runtime-integrity-test.ts",
+    "ingest": "tsx scripts/ingest-docs.ts",
+    "ingest:help": "tsx scripts/ingest-docs.ts --help"
   },
   "devDependencies": {
     "@types/node": "^22.7.4",

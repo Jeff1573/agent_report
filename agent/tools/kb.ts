@@ -56,7 +56,7 @@ function joinWithLimit(parts: string[], limit: number): string {
  * @param {number=} params.fetchK - 当 searchType=mmr 时的候选规模，默认 max(32, 4*k)
  */
 export const kbSearchTool = tool(
-  async ({ query, k, collection, searchType, mmrLambda, fetchK }: { query: string; k?: number; collection?: string; searchType?: 'similarity' | 'mmr'; mmrLambda?: number; fetchK?: number }) => {
+  async ({ query, k, collection, searchType, mmrLambda, fetchK, where }: { query: string; k?: number; collection?: string; searchType?: 'similarity' | 'mmr'; mmrLambda?: number; fetchK?: number; where?: Record<string, unknown> }) => {
     // 1) 集合名上锁：默认仅允许 KB_COLLECTION；若配置白名单，则白名单 + KB_COLLECTION
     const base = (KB_COLLECTION || '').trim()
     if (!base) {
@@ -80,17 +80,18 @@ export const kbSearchTool = tool(
     const defaultToClientMMR = !wantSimilarityExplicit // 未指定或显式要求 mmr → 默认走 mmr(client)
     let usedType: 'similarity' | 'mmr' | 'mmr(client)' = defaultToClientMMR ? 'mmr(client)' : (wantSimilarityExplicit ? 'similarity' : 'mmr')
     let hits: any[] = []
+    let fallback = false
 
     // 3) 当“未指定/显式要求 mmr”且启用客户端重排时，优先走客户端 MMR；否则按后端能力或 similarity 尝试
     if (defaultToClientMMR && RERANK_ENABLED) {
       try {
         const lambda = typeof mmrLambda === 'number' ? mmrLambda : (typeof RERANK_LAMBDA === 'number' ? RERANK_LAMBDA : 0.35)
         const fetchKLocal = typeof fetchK === 'number' && fetchK > 0 ? fetchK : (typeof RERANK_FETCHK === 'number' && RERANK_FETCHK > 0 ? RERANK_FETCHK : Math.max(20, 4 * topK))
-        hits = await retrieveWithClientMMR(usedCollection, query, { k: topK, fetchK: fetchKLocal, lambda })
+        hits = await retrieveWithClientMMR(usedCollection, query, { k: topK, fetchK: fetchKLocal, lambda, where })
         usedType = 'mmr(client)'
       } catch (e) {
         logger.warn('[kb_search] 客户端 MMR 失败，回退 similarity', { error: (e as Error)?.message })
-        const retriever = await buildChromaRetriever(usedCollection, { k: topK, searchType: 'similarity' })
+        const retriever = await buildChromaRetriever(usedCollection, { k: topK, searchType: 'similarity', where })
         hits = await retriever.invoke(query)
         usedType = 'similarity'
       }
@@ -99,10 +100,32 @@ export const kbSearchTool = tool(
         k: topK,
         searchType: wantSimilarityExplicit ? 'similarity' : 'mmr',
         mmrLambda: typeof mmrLambda === 'number' ? mmrLambda : 0.5,
-        fetchK: typeof fetchK === 'number' ? fetchK : undefined
+        fetchK: typeof fetchK === 'number' ? fetchK : undefined,
+        where
       })
       hits = await retriever.invoke(query)
       usedType = wantSimilarityExplicit ? 'similarity' : 'mmr'
+    }
+    // 命中为空且给了 where → 自动退化（无过滤重试一次）
+    if (Array.isArray(hits) && hits.length === 0 && where && Object.keys(where).length > 0) {
+      try {
+        logger.info('[kb_search] 命中为空，触发无过滤退化重试', { where })
+        if (usedType === 'mmr(client)') {
+          const lambda = typeof mmrLambda === 'number' ? mmrLambda : (typeof RERANK_LAMBDA === 'number' ? RERANK_LAMBDA : 0.35)
+          const fetchKLocal = typeof fetchK === 'number' && fetchK > 0 ? fetchK : (typeof RERANK_FETCHK === 'number' && RERANK_FETCHK > 0 ? RERANK_FETCHK : Math.max(20, 4 * topK))
+          hits = await retrieveWithClientMMR(usedCollection, query, { k: topK, fetchK: fetchKLocal, lambda })
+        } else {
+          const retriever2 = await buildChromaRetriever(usedCollection, {
+            k: topK,
+            searchType: usedType === 'similarity' ? 'similarity' : 'mmr',
+            mmrLambda: typeof mmrLambda === 'number' ? mmrLambda : 0.5
+          })
+          hits = await retriever2.invoke(query)
+        }
+        fallback = true
+      } catch (e) {
+        logger.warn('[kb_search] 退化重试失败', { error: (e as Error)?.message })
+      }
     }
     // 4) 结构化 JSON 输出
     const sourceList: string[] = Array.from(new Set(
@@ -137,7 +160,9 @@ export const kbSearchTool = tool(
         type: usedType,
         k: topK,
         ...(defaultToClientMMR ? { fetchK: typeof fetchK === 'number' && fetchK > 0 ? fetchK : (typeof RERANK_FETCHK === 'number' && RERANK_FETCHK > 0 ? RERANK_FETCHK : Math.max(20, 4 * topK)) } : {}),
-        ...(defaultToClientMMR ? { lambda: typeof mmrLambda === 'number' ? mmrLambda : (typeof RERANK_LAMBDA === 'number' ? RERANK_LAMBDA : 0.35) } : {})
+        ...(defaultToClientMMR ? { lambda: typeof mmrLambda === 'number' ? mmrLambda : (typeof RERANK_LAMBDA === 'number' ? RERANK_LAMBDA : 0.35) } : {}),
+        ...(where && !fallback ? { where } : {}),
+        ...(fallback ? { fallback: true } : {})
       },
       context: ctxItems,
       contextText,
@@ -156,10 +181,10 @@ export const kbSearchTool = tool(
       collection: z.string().optional(),
       searchType: z.enum(['similarity', 'mmr']).optional(),
       mmrLambda: z.number().min(0).max(1).optional(),
-      fetchK: z.number().int().min(8).max(256).optional()
+      fetchK: z.number().int().min(8).max(256).optional(),
+      where: z.record(z.any()).optional()
     })
   }
 )
 
 export default kbSearchTool
-
