@@ -1,0 +1,38 @@
+{
+  "name": "@mindforge/ast-fast",
+  "version": "0.1.0",
+  "main": "dist/server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsup src/server.ts --format esm --dts --clean",
+    "dev": "tsx src/server.ts",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo skip"
+  },
+  "keywords": "[mcp,ast,ts-morph]",
+  "author": "",
+  "license": "MIT",
+  "description": "MCP server for fast AST insights",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "files": "[ dist]",
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.2"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.18.2",
+    "fast-glob": "^3.3.3",
+    "ignore": "^7.0.5",
+    "p-limit": "^7.1.1",
+    "pino": "^9.11.0",
+    "quick-lru": "^7.2.0",
+    "ts-morph": "^27.0.0",
+    "zod": "^3.25.76"
+  }
+}
