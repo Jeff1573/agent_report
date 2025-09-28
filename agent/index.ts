@@ -3,7 +3,7 @@
 
 import { logger, createLogger } from './utils/logger.js';
 import { createAgentRuntime } from './runtime/index.js';
-import { THREAD_ID_FALLBACK, TIMEOUT_MS } from './config/env.js';
+import { THREAD_ID_FALLBACK } from './config/env.js';
 
 type Mode = 'values' | 'events';
 
@@ -140,29 +140,12 @@ async function main() {
     }
   };
 
-  const controller = new AbortController();
-  const deadline = Number.isFinite(TIMEOUT_MS) && Number(TIMEOUT_MS) > 0 ? Number(TIMEOUT_MS) : undefined;
-  let timedOut = false;
-  let timer: NodeJS.Timeout | undefined;
-  if (deadline) {
-    timer = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-      log.error(`[timeout] 超过 TIMEOUT_MS=${deadline}ms`);
-      process.exitCode = 124;
-    }, deadline);
-  }
-
   try {
     if (mode === 'events') {
       let eventCount = 0;
       for await (const ev of runtime.streamEvents(query, { summary, threadId })) {
         eventCount++;
         print(ev);
-        if (timedOut) {
-          log.warn(`Breaking due to timeout after ${eventCount} events`);
-          break;
-        }
       }
       log.info(`Processed ${eventCount} events`);
     } else {
@@ -170,20 +153,12 @@ async function main() {
       for await (const ev of runtime.streamValues(query, { summary, threadId })) {
         eventCount++;
         print(ev);
-        if (timedOut) {
-          log.warn(`Breaking due to timeout after ${eventCount} events`);
-          break;
-        }
       }
       log.info(`Processed ${eventCount} events`);
     }
   } catch (error) {
     log.error('Stream processing error:', error);
-    if (timedOut) {
-      log.error('Stream was aborted due to timeout');
-    }
   } finally {
-    if (timer) clearTimeout(timer);
     // 清理运行时资源
     try {
       // await runtime.close();
