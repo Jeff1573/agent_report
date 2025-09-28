@@ -32,7 +32,8 @@ export async function getFileStructureSummary(filePath: string) {
   const exports: { name: string; isDefault: boolean }[] = []
   for (const [name, decls] of exportedDecls) {
     for (const d of decls) {
-      const isDefault = Node.isExportAssignment(d) ? true : !!d.getFirstModifierByKind(SyntaxKind.DefaultKeyword)
+      const isDefault = Node.isExportAssignment(d) ? true : 
+        (Node.isModifierable(d) && 'getFirstModifierByKind' in d ? !!d.getFirstModifierByKind(SyntaxKind.DefaultKeyword) : false)
       exports.push({ name, isDefault })
     }
   }

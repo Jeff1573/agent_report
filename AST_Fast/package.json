@@ -1,24 +1,30 @@
 {
   "name": "@mindforge/ast-fast",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "main": "dist/server.js",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node simple-test.js",
+    "test:full": "node test-mcp-server.js",
+    "test:manual": "cat manual-test.md",
+    "test:inspector": "echo 'Starting MCP Inspector...' && echo 'Open browser to http://localhost:5173' && echo 'Configure: Transport=stdio, Command=node, Args=/Users/fj/Desktop/Agent/mindForge_re/AST_Fast/dist/server.js' && npx @modelcontextprotocol/inspector",
     "build": "tsup src/server.ts --format esm --dts --clean",
     "dev": "tsx src/server.ts",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "lint": "echo skip"
+    "lint": "echo 'Linting skipped for now'",
+    "clean": "rm -rf dist node_modules",
+    "reinstall": "npm run clean && npm install",
+    "guide": "echo '📚 Available documentation:' && echo '📖 demo-usage.md - Complete usage guide and best practices' && echo '🧪 manual-test.md - Comprehensive manual testing guide' && echo '🔍 test-with-inspector.md - Visual testing with MCP Inspector' && echo '' && echo '🚀 Quick commands:' && echo '1. npm test - Basic functionality test (30s)' && echo '2. npm run test:inspector - Visual testing interface' && echo '3. npm run test:manual - View manual test guide'"
   },
-  "keywords": "[mcp,ast,ts-morph]",
-  "author": "",
+  "keywords": ["mcp", "ast", "tree-sitter", "web3", "solidity", "rust", "golang", "python", "java", "typescript"],
+  "author": "MindForge Team",
   "license": "MIT",
-  "description": "MCP server for fast AST insights",
-  "type": "module",
+  "description": "Multi-language AST analysis MCP server supporting Web3 and backend languages",
   "engines": {
     "node": ">=22"
   },
-  "files": "[ dist]",
+  "files": ["dist"],
   "devDependencies": {
     "@types/node": "^24.5.2",
     "tsup": "^8.5.0",
@@ -32,7 +38,16 @@
     "p-limit": "^7.1.1",
     "pino": "^9.11.0",
     "quick-lru": "^7.2.0",
+    "tree-sitter": "^0.25.0",
+    "tree-sitter-cli": "^0.25.10",
+    "tree-sitter-go": "^0.25.0",
+    "tree-sitter-java": "^0.23.5",
+    "tree-sitter-python": "^0.25.0",
+    "tree-sitter-rust": "^0.24.0",
+    "tree-sitter-solidity": "^1.2.13",
+    "tree-sitter-typescript": "^0.23.2",
     "ts-morph": "^27.0.0",
+    "web-tree-sitter": "^0.25.10",
     "zod": "^3.25.76"
   }
 }
