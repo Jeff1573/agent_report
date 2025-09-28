@@ -13,6 +13,22 @@ dotenv.config({
   override: true,
 });
 
+/**
+ * 环境变量配置说明：
+ *
+ * 递归和工具调用限制配置（重要）：
+ * - RECURSION_LIMIT: LangGraph递归深度限制（默认150，复杂任务建议100-200）
+ * - TOOL_MAX_CALLS: 总工具调用次数限制（默认100，复杂任务建议100-200）
+ * - TOOL_TIMEOUT_MS: 工具调用超时时间（默认45000ms，复杂任务建议45000-90000ms）
+ * - TOOL_RETRY_ATTEMPTS: 工具调用失败重试次数（默认5，建议3-8次）
+ *
+ * 示例 .env 配置：
+ * RECURSION_LIMIT=150
+ * TOOL_MAX_CALLS=100
+ * TOOL_TIMEOUT_MS=45000
+ * TOOL_RETRY_ATTEMPTS=5
+ */
+
 // 1) OpenAI 兼容配置（必填项请在 .env 中提供）
 export const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL; // 你的网关 /v1 即可
 export const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
@@ -41,6 +57,18 @@ export const LOG_COLOR = process.env.LOG_COLOR || 'auto'; // auto | true | false
 export const CHECKPOINT_MODE = (process.env.CHECKPOINT_MODE || 'memory').toLowerCase();
 export const CHECKPOINT_POSTGRES_URL = process.env.CHECKPOINT_POSTGRES_URL || process.env.POSTGRES_URL || '';
 export const THREAD_ID_FALLBACK = process.env.THREAD_ID || process.env.LG_THREAD_ID || '';
+
+// LangGraph 递归限制配置 - 解决复杂任务递归限制问题
+// - RECURSION_LIMIT: 最大递归深度（默认75，复杂任务建议100-200）
+export const RECURSION_LIMIT = Number(process.env.RECURSION_LIMIT || 300);
+
+// 工具调用限制配置 - 防止过度调用和无限循环
+// - TOOL_MAX_CALLS: 单次会话中所有工具的最大调用次数总和
+export const TOOL_MAX_CALLS = Number(process.env.TOOL_MAX_CALLS || 100);
+// - TOOL_TIMEOUT_MS: 工具调用的超时时间（毫秒）
+export const TOOL_TIMEOUT_MS = Number(process.env.TOOL_TIMEOUT_MS || 45000);
+// - TOOL_RETRY_ATTEMPTS: 工具调用失败时的重试次数
+export const TOOL_RETRY_ATTEMPTS = Number(process.env.TOOL_RETRY_ATTEMPTS || 5);
 
 // Tavily API Key（搜索工具）
 export const TAVILY_API_KEY = process.env.TAVILY_API_KEY || '';

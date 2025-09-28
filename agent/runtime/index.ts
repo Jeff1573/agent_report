@@ -12,7 +12,7 @@ import { logger } from '../utils/logger.js';
 import type { StreamEvent, InteractionSegment, Summarizer, AssistantMessageEvent } from '../stream/types.js';
 import { observeValues, observeEvents } from '../stream/observer.js';
 import { createCheckpointer, type PersistenceMode } from './persistence.js';
-import { CHECKPOINT_MODE, THREAD_ID_FALLBACK } from '../config/env.js';
+import { CHECKPOINT_MODE, THREAD_ID_FALLBACK, RECURSION_LIMIT, TOOL_MAX_CALLS, TOOL_TIMEOUT_MS, TOOL_RETRY_ATTEMPTS } from '../config/env.js';
 import { defaultSummarizer } from '../stream/summarizers.js';
 import { getMCPTools, cleanupMCPClient, type MultiServerMCPClient } from '../tools/mcp.js';
 
@@ -98,6 +98,62 @@ class SegmentAccumulator {
 export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<AgentRuntime> {
   let tools: unknown[] = [];
   let mcpClient: MultiServerMCPClient | undefined;
+  let toolCallCount = 0; // 总工具调用计数器
+
+  // 工具调用限制检查函数
+  function checkToolCallLimit(): boolean {
+    if (toolCallCount >= TOOL_MAX_CALLS) {
+      logger.warn(`工具调用次数已达到限制: ${toolCallCount}/${TOOL_MAX_CALLS}`);
+      return false;
+    }
+    return true;
+  }
+
+  // 工具调用包装器 - 添加限制、超时和重试（适用于所有工具）
+  function wrapTool(tool: any) {
+    const originalCall = tool.call;
+
+    tool.call = async (...args: any[]) => {
+      // 1. 检查调用次数限制
+      if (!checkToolCallLimit()) {
+        throw new Error(`工具调用次数已达到限制 (${TOOL_MAX_CALLS})，无法执行更多工具调用`);
+      }
+
+      // 2. 增加计数并记录日志
+      toolCallCount++;
+      const toolName = tool.name || 'unknown-tool';
+      logger.info(`工具调用 ${toolCallCount}/${TOOL_MAX_CALLS}: ${toolName}`);
+
+      // 3. 创建超时Promise
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error(`工具调用超时 (${TOOL_TIMEOUT_MS}ms)`)), TOOL_TIMEOUT_MS);
+      });
+
+      // 4. 执行工具调用（带重试）
+      let lastError: Error | null = null;
+      for (let attempt = 0; attempt <= TOOL_RETRY_ATTEMPTS; attempt++) {
+        try {
+          const result = await Promise.race([originalCall.apply(tool, args), timeoutPromise]);
+          logger.info(`工具调用成功: ${toolName} (尝试 ${attempt + 1})`);
+          return result;
+        } catch (error) {
+          lastError = error as Error;
+          logger.warn(`工具调用失败 ${attempt + 1}/${TOOL_RETRY_ATTEMPTS + 1}: ${toolName}`, error);
+
+          if (attempt < TOOL_RETRY_ATTEMPTS) {
+            // 等待后重试
+            await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+          }
+        }
+      }
+
+      // 所有重试都失败了
+      logger.error(`MCP工具调用最终失败: ${toolName}`, lastError);
+      throw lastError || new Error(`MCP工具调用失败: ${toolName}`);
+    };
+
+    return tool;
+  }
 
   try {
     // 检查是否提供了自定义工具
@@ -110,9 +166,11 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
       // 尝试加载MCP工具
       try {
         const mcpResult = await getMCPTools();
-        tools.push(...mcpResult.tools);
+        // 为每个MCP工具应用调用限制包装器
+        const wrappedMCPTools = mcpResult.tools.map(wrapTool);
+        tools.push(...wrappedMCPTools);
         mcpClient = mcpResult.client;
-        logger.info(`Loaded ${mcpResult.tools.length} MCP tools`);
+        logger.info(`Loaded ${wrappedMCPTools.length} MCP tools with call limits (${TOOL_MAX_CALLS} max total calls)`);
       } catch (mcpError) {
         logger.warn('Failed to load MCP tools:', mcpError);
         // MCP工具失败不应该阻止系统启动
@@ -232,7 +290,11 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
     const threadId = (options?.threadId && typeof options.threadId === 'string' && options.threadId.trim())
       ? options.threadId.trim()
       : (THREAD_ID_FALLBACK || undefined);
-    const gen = observeValues(agent, inputs, threadId ? { configurable: { thread_id: threadId } } : undefined);
+    const config = {
+      ...(threadId ? { configurable: { thread_id: threadId } } : {}),
+      recursionLimit: RECURSION_LIMIT,
+    };
+    const gen = observeValues(agent, inputs, config as any);
     yield* pipeWithSummary(gen, options);
   }
 
@@ -245,7 +307,11 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
     const threadId = (options?.threadId && typeof options.threadId === 'string' && options.threadId.trim())
       ? options.threadId.trim()
       : (THREAD_ID_FALLBACK || undefined);
-    const gen = observeEvents(agent, inputs, threadId ? { configurable: { thread_id: threadId } } : undefined);
+    const config = {
+      ...(threadId ? { configurable: { thread_id: threadId } } : {}),
+      recursionLimit: RECURSION_LIMIT,
+    };
+    const gen = observeEvents(agent, inputs, config as any);
     yield* pipeWithSummary(gen, options);
   }
 
