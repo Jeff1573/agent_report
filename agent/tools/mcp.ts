@@ -7,6 +7,7 @@
  */
 import { MultiServerMCPClient } from '@langchain/mcp-adapters';
 import { logger } from '../utils/logger.js';
+import { MCP_CONFIG_PATH } from '../config/env.js';
 import path from 'path';
 import { readFileSync } from 'fs';
 
@@ -32,11 +33,12 @@ export type { MultiServerMCPClient } from '@langchain/mcp-adapters';
 
 /**
  * 读取MCP配置文件
- * @param configPath MCP配置文件路径，默认为 ~/.cursor/mcp.json
+ * @param configPath MCP配置文件路径，优先级：参数 > 环境变量 > 默认路径
  */
 export function readMCPConfig(configPath?: string): MCPConfig {
+  // 优先级：参数 > 环境变量 > 默认路径
   const defaultPath = path.join(process.env.HOME || '~', '.cursor', 'mcp.json');
-  const finalPath = configPath || defaultPath;
+  const finalPath = configPath || MCP_CONFIG_PATH || defaultPath;
 
   try {
     const configContent = readFileSync(finalPath, 'utf-8');

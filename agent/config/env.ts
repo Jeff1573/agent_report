@@ -68,6 +68,9 @@ export const RAG_CTX_CHAR_LIMIT = Math.max(500, Number(process.env.RAG_CTX_CHAR_
 const KB_ROOT_FROM_ENV = process.env.KB_STORAGE_ROOT; // 知识库根目录（用于存放所有知识库资源）
 const KB_RAW_FROM_ENV = process.env.KB_STORAGE_RAW_DIR; // 知识库原始文件目录（存放上传原始文件）
 
+// MCP 配置文件路径
+export const MCP_CONFIG_PATH = process.env.MCP_CONFIG_PATH;
+
 /**
  * 确保目录存在并返回绝对路径。
  *
