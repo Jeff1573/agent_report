@@ -45,12 +45,14 @@ function toText(res: unknown): string {
 
 /**
  * 解析 CLI 参数。
- * @returns {{ projectPath: string; collection: string; include: Set<string> }} 参数对象
+ *
+ * @returns {{ projectPath: string; collection: string; include: Set<string> }}
+ * 解析后的参数对象，其中 include 默认包含函数、类、合约、结构体、变量、常量等通用符号类型。
  */
 function parseCli(): { projectPath: string; collection: string; include: Set<string> } {
   const projectPath = process.argv[2] ? path.resolve(process.argv[2]) : process.cwd()
   const collection = (process.argv[3] || 'code-kb').trim()
-  const typesCsv = (process.argv[4] || 'function,class,contract,struct').trim()
+  const typesCsv = (process.argv[4] || 'function,class,contract,struct,variable,constant').trim()
   const include = new Set(
     typesCsv
       .split(',')
@@ -61,7 +63,11 @@ function parseCli(): { projectPath: string; collection: string; include: Set<str
 }
 
 /**
- * 根据文件解析结果与统一符号定义，判断是否保留该符号。
+ * 根据统一符号定义判断是否保留当前符号。
+ *
+ * @param {any} symbol - AST_Fast 返回的统一符号对象
+ * @param {Set<string>} allow - 允许保留的符号类型集合
+ * @returns {boolean} 是否保留该符号
  */
 function shouldKeepSymbol(symbol: any, allow: Set<string>): boolean {
   const t = String(symbol?.type || '').toLowerCase()
@@ -81,6 +87,28 @@ function makeDoc(parsed: any, sym: any, code: string): Document {
       symbolType: String(sym?.type || ''),
       startLine: Number(sym?.range?.start?.line ?? -1),
       endLine: Number(sym?.range?.end?.line ?? -1)
+    }
+  })
+}
+
+/**
+ * 当无法提取任何符号时，生成基于整文件的回退文档。
+ *
+ * @param {string} filePath - 文件绝对路径
+ * @param {any} parsed - AST 解析结果，用于携带语言等元数据
+ * @returns {Promise<Document>} 描述整个文件的文档
+ */
+async function makeFallbackDoc(filePath: string, parsed: any): Promise<Document> {
+  const fileContent = await fs.readFile(filePath, 'utf-8')
+  return new Document({
+    pageContent: fileContent,
+    metadata: {
+      filePath: filePath,
+      language: parsed?.language || 'unknown',
+      symbolName: 'file_content',
+      symbolType: 'file',
+      startLine: 1,
+      endLine: fileContent.split('\n').length
     }
   })
 }
