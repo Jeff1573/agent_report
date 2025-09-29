@@ -7,7 +7,7 @@
 
 import { OpenAIEmbeddings } from '@langchain/openai'
 import { GoogleGenerativeAIEmbeddings } from '@langchain/google-genai'
-import { KB_EMBED_MODEL, KB_EMBED_PROVIDER, GOOGLE_API_KEY } from '../config/env.js'
+import { KB_EMBED_MODEL, KB_EMBED_PROVIDER, GOOGLE_API_KEY, OPENAI_API_KEY } from '../config/env.js'
 
 /**
  * 构建 Embeddings 实例（支持 openai / gemini）。
@@ -33,4 +33,3 @@ export function makeKbEmbeddings(): OpenAIEmbeddings | GoogleGenerativeAIEmbeddi
     model: KB_EMBED_MODEL
   })
 }
-
