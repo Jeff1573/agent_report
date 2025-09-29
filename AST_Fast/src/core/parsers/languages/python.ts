@@ -89,6 +89,14 @@ export class PythonParser extends BaseLanguageParser {
           const variables = this.extractVariableAssignment(node, sourceCode)
           symbols.push(...variables)
           break
+
+        case 'if_statement': {
+          const moduleGuard = this.extractMainGuardSymbol(node, sourceCode)
+          if (moduleGuard) {
+            symbols.push(moduleGuard)
+          }
+          break
+        }
       }
 
       for (const child of node.children) {
@@ -184,6 +192,52 @@ export class PythonParser extends BaseLanguageParser {
     }
     
     return variables
+  }
+
+  /**
+   * 提取模块入口守卫生成的符号，便于将 `if __name__ == "__main__"` 等顶层逻辑写入知识库。
+   *
+   * @param {Parser.SyntaxNode} node - Tree-sitter 的 if 语句节点
+   * @param {string} sourceCode - 当前文件源码
+   * @returns {UnifiedSymbol | null} 返回模块级符号信息或 null
+   */
+  private extractMainGuardSymbol(node: Parser.SyntaxNode, sourceCode: string): UnifiedSymbol | null {
+    if (node.parent?.type !== 'module') {
+      return null
+    }
+
+    const conditionNode = node.childForFieldName('condition')
+    if (!conditionNode) {
+      return null
+    }
+
+    const conditionText = sourceCode.slice(conditionNode.startIndex, conditionNode.endIndex)
+    if (!this.isMainGuardCondition(conditionText)) {
+      return null
+    }
+
+    return {
+      name: '__main__ guard',
+      type: 'module',
+      range: createRange(sourceCode, node.startIndex, node.endIndex),
+      visibility: 'public'
+    }
+  }
+
+  /**
+   * 判断当前 if 条件是否为模块入口守卫。
+   *
+   * @param {string} rawCondition - if 条件源码文本
+   * @returns {boolean} 是否匹配 `__name__ == "__main__"` 的形式
+   */
+  private isMainGuardCondition(rawCondition: string): boolean {
+    const normalized = rawCondition
+      .replace(/\s+/g, ' ')
+      .replace(/['"]/g, '"')
+      .trim()
+      .toLowerCase()
+
+    return normalized === '__name__ == "__main__"' || normalized === '__name__ == "__main__"' // 保留等价写法
   }
 
   private extractImportStatement(node: Parser.SyntaxNode, sourceCode: string): UnifiedImport | null {

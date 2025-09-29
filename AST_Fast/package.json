@@ -17,14 +17,27 @@
     "reinstall": "npm run clean && npm install",
     "guide": "echo '📚 Available documentation:' && echo '📖 demo-usage.md - Complete usage guide and best practices' && echo '🧪 manual-test.md - Comprehensive manual testing guide' && echo '🔍 test-with-inspector.md - Visual testing with MCP Inspector' && echo '' && echo '🚀 Quick commands:' && echo '1. npm test - Basic functionality test (30s)' && echo '2. npm run test:inspector - Visual testing interface' && echo '3. npm run test:manual - View manual test guide'"
   },
-  "keywords": ["mcp", "ast", "tree-sitter", "web3", "solidity", "rust", "golang", "python", "java", "typescript"],
+  "keywords": [
+    "mcp",
+    "ast",
+    "tree-sitter",
+    "web3",
+    "solidity",
+    "rust",
+    "golang",
+    "python",
+    "java",
+    "typescript"
+  ],
   "author": "MindForge Team",
   "license": "MIT",
   "description": "Multi-language AST analysis MCP server supporting Web3 and backend languages",
   "engines": {
     "node": ">=22"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "devDependencies": {
     "@types/node": "^24.5.2",
     "tsup": "^8.5.0",
@@ -32,7 +45,9 @@
     "typescript": "^5.9.2"
   },
   "dependencies": {
+    "@esbuild/win32-x64": "^0.25.10",
     "@modelcontextprotocol/sdk": "^1.18.2",
+    "@rollup/rollup-win32-x64-msvc": "^4.52.3",
     "fast-glob": "^3.3.3",
     "ignore": "^7.0.5",
     "p-limit": "^7.1.1",
