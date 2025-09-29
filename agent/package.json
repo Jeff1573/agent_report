@@ -10,7 +10,7 @@
   "description": "Agent workspace for LangChain/OpenAI integrations (ESM)",
   "scripts": {
     "demo:embed": "tsx examples/embedding-connection-test.ts",
-    "start": "tsx index.ts",
+    "start": "bun run index.ts",
     "typecheck": "tsc --noEmit",
     "demo:persistence": "tsx examples/persistence-demo.ts",
     "demo:structured-output": "tsx examples/structured-output-demo.ts",
