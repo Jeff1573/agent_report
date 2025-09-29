@@ -90,7 +90,7 @@ export const RAG_DATA_DIR = process.env.RAG_DATA_DIR || '';
 export const KB_COLLECTION = (process.env.KB_COLLECTION || '').trim();
 
 // 检索上下文拼接最大字符数（避免提示过长被模型截断）
-export const RAG_CTX_CHAR_LIMIT = Math.max(500, Number(process.env.RAG_CTX_CHAR_LIMIT || 3500));
+export const RAG_CTX_CHAR_LIMIT = Math.max(500, Number(process.env.RAG_CTX_CHAR_LIMIT || 4000));
 
 // 知识库文件存储目录（需要显式配置，未设置则视为禁用相关能力）
 const KB_ROOT_FROM_ENV = process.env.KB_STORAGE_ROOT; // 知识库根目录（用于存放所有知识库资源）
@@ -136,7 +136,7 @@ export const CHROMA_URL = process.env.CHROMA_URL || process.env.CHROMADB_URL || 
 // 是否启用客户端重排（当后端不支持 MMR 时仍可获得多样性/相关性提升）
 export const RERANK_ENABLED = (process.env.RERANK_ENABLED ?? 'true').toLowerCase() !== 'false';
 // 本地重排候选规模（先用 similarity 取候选，再做本地 MMR 选择）
-export const RERANK_FETCHK = Number(process.env.RERANK_FETCHK || 32);
+export const RERANK_FETCHK = Number(process.env.RERANK_FETCHK || 128);
 // 本地 MMR 折中系数（0~1）；靠近 1 偏向相关性，靠近 0 偏向多样性
 export const RERANK_LAMBDA = Number(process.env.RERANK_LAMBDA || 0.35);
 // 集合名白名单：逗号分隔；为空表示仅允许 KB_COLLECTION

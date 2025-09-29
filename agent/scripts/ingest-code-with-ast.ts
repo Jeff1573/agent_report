@@ -13,7 +13,8 @@
  *   - 运行时：Node.js >= 22（ESM）。
  *
  * 使用方法（PowerShell）：
- *   npx tsx agent/scripts/ingest-code-with-ast.ts <projectPath> <collectionName> [symbolTypes]
+ *   npx tsx agent/scripts/ingest-code-with-ast.ts <projectPath> <collectionName> [symbolTypes] [mode]
+ *   # mode: ast（默认，仅使用 AST）| auto（单文件时优先 AST，失败则回退常规切块）
  *   # 例：
  *   npx tsx agent/scripts/ingest-code-with-ast.ts E:\jf\mindForge_re my-code-kb function,class,contract,struct
  */
@@ -22,25 +23,29 @@ import path from 'node:path'
 import * as fs from 'node:fs/promises'
 import { Document } from '@langchain/core/documents'
 import { ingestCode, DEFAULT_SYMBOL_TYPES } from '../services/codeIngestor.js'
+import { ingestSourceWithFallback } from '../services/sourceIngestor.js'
 import { logger } from '../utils/logger.js'
 
+type IngestMode = 'ast' | 'auto'
 /**
  * 解析 CLI 参数。
  *
- * @returns {{ projectPath: string; collection: string; include: Set<string> }}
+ * @returns {{ projectPath: string; collection: string; include: Set<string>; mode: IngestMode }}
  * 解析后的参数对象，其中 include 默认包含函数、类、合约、结构体、变量、常量等通用符号类型。
  */
-function parseCli(): { projectPath: string; collection: string; include: Set<string> } {
+function parseCli(): { projectPath: string; collection: string; include: Set<string>; mode: IngestMode } {
   const projectPath = process.argv[2] ? path.resolve(process.argv[2]) : process.cwd()
   const collection = (process.argv[3] || 'code-kb').trim()
   const typesCsv = (process.argv[4] || Array.from(DEFAULT_SYMBOL_TYPES).join(',')).trim()
+  const rawMode = (process.argv[5] || 'ast').trim().toLowerCase()
+  const mode = rawMode === 'auto' ? 'auto' : 'ast'
   const include = new Set(
     typesCsv
       .split(',')
       .map((s) => s.trim())
       .filter((s) => s.length > 0)
   )
-  return { projectPath, collection, include }
+  return { projectPath, collection, include, mode }
 }
 
 /**
@@ -66,7 +71,15 @@ async function makeFallbackDoc(filePath: string, parsed: any): Promise<Document>
 }
 
 async function main(): Promise<void> {
-  const { projectPath, collection, include } = parseCli()
+  const { projectPath, collection, include, mode } = parseCli()
+  const stats = await fs.stat(projectPath)
+
+  if (mode === 'auto' && stats.isFile()) {
+    const written = await ingestSourceWithFallback({ filePath: projectPath, collection })
+    logger.info('[ingest-code-with-ast] auto 模式完成', { collection, docs: written })
+    return
+  }
+
   await ingestCode({ projectPath, collection, include })
 }
 

@@ -12,6 +12,7 @@ import { MCP_CONFIG_PATH } from '../config/env.js'
 import { createMCPClient } from '../tools/mcp.js'
 import { upsertToChroma } from './storage.js'
 import { logger } from '../utils/logger.js'
+import { METADATA_KEYS } from './metadataSchema.js'
 
 /**
  * 默认允许的符号类型集合。
@@ -77,12 +78,12 @@ function makeDoc(parsed: any, sym: any, code: string): Document {
   return new Document({
     pageContent: code,
     metadata: {
-      filePath: String(parsed?.filePath || ''),
-      language: String(parsed?.language || ''),
-      symbolName: String(sym?.name || ''),
-      symbolType: String(sym?.type || ''),
-      startLine: Number(sym?.range?.start?.line ?? -1),
-      endLine: Number(sym?.range?.end?.line ?? -1)
+      [METADATA_KEYS.filePath]: String(parsed?.filePath || ''),
+      [METADATA_KEYS.language]: String(parsed?.language || ''),
+      [METADATA_KEYS.symbolName]: String(sym?.name || ''),
+      [METADATA_KEYS.symbolType]: String(sym?.type || ''),
+      [METADATA_KEYS.startLine]: Number(sym?.range?.start?.line ?? -1),
+      [METADATA_KEYS.endLine]: Number(sym?.range?.end?.line ?? -1)
     }
   })
 }

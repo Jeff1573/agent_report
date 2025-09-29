@@ -9,6 +9,7 @@ import { z } from 'zod'
 import { tool } from '@langchain/core/tools'
 import { formatDocumentsAsString } from 'langchain/util/document'
 import { buildChromaRetriever, resolveCollectionName, retrieveWithClientMMR } from '../services/storage.js'
+import { METADATA_KEYS } from '../services/metadataSchema.js'
 import { KB_COLLECTION, RAG_CTX_CHAR_LIMIT, KB_COLLECTION_WHITELIST, RERANK_ENABLED, RERANK_FETCHK, RERANK_LAMBDA } from '../config/env.js'
 import { logger } from '../utils/logger.js'
 
@@ -55,8 +56,40 @@ function joinWithLimit(parts: string[], limit: number): string {
  * @param {number=} params.mmrLambda - MMR 折中系数（0~1），默认 0.5
  * @param {number=} params.fetchK - 当 searchType=mmr 时的候选规模，默认 max(32, 4*k)
  */
+function normalizeWhere(raw?: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (!raw || typeof raw !== 'object') return raw
+  const normalized: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(raw)) {
+    let finalKey = key
+    // 统一 symbol_name → symbolName 等常见写法
+    if (key === 'symbol_name') finalKey = METADATA_KEYS.symbolName
+    if (key === 'symbol_type') finalKey = METADATA_KEYS.symbolType
+    if (key === 'file_path') finalKey = METADATA_KEYS.filePath
+
+    normalized[finalKey] = value
+  }
+  return normalized
+}
+
 export const kbSearchTool = tool(
-  async ({ query, k, collection, searchType, mmrLambda, fetchK, where }: { query: string; k?: number; collection?: string; searchType?: 'similarity' | 'mmr'; mmrLambda?: number; fetchK?: number; where?: Record<string, unknown> }) => {
+  async ({
+    query,
+    k,
+    collection,
+    searchType,
+    mmrLambda,
+    fetchK,
+    where
+  }: {
+    query: string
+    k?: number
+    collection?: string
+    searchType?: 'similarity' | 'mmr'
+    mmrLambda?: number
+    fetchK?: number
+    where?: Partial<Record<keyof typeof METADATA_KEYS, string>>
+  }) => {
+    const normalizedWhere = normalizeWhere(where)
     // 1) 集合名上锁：默认仅允许 KB_COLLECTION；若配置白名单，则白名单 + KB_COLLECTION
     const base = (KB_COLLECTION || '').trim()
     if (!base) {
@@ -74,7 +107,7 @@ export const kbSearchTool = tool(
 
     // 2) 规范化参数：k 做收敛（4~8），未指定 searchType 时默认 mmr(client)
     const rawTopK = typeof k === 'number' ? k : 4
-    const topK = Math.max(4, Math.min(8, rawTopK))
+    const topK = Math.max(6, Math.min(8, rawTopK))
     const wantMMRExplicit = searchType === 'mmr'
     const wantSimilarityExplicit = searchType === 'similarity'
     const defaultToClientMMR = !wantSimilarityExplicit // 未指定或显式要求 mmr → 默认走 mmr(client)
@@ -87,11 +120,11 @@ export const kbSearchTool = tool(
       try {
         const lambda = typeof mmrLambda === 'number' ? mmrLambda : (typeof RERANK_LAMBDA === 'number' ? RERANK_LAMBDA : 0.35)
         const fetchKLocal = typeof fetchK === 'number' && fetchK > 0 ? fetchK : (typeof RERANK_FETCHK === 'number' && RERANK_FETCHK > 0 ? RERANK_FETCHK : Math.max(20, 4 * topK))
-        hits = await retrieveWithClientMMR(usedCollection, query, { k: topK, fetchK: fetchKLocal, lambda, where })
+        hits = await retrieveWithClientMMR(usedCollection, query, { k: topK, fetchK: fetchKLocal, lambda, where: normalizedWhere })
         usedType = 'mmr(client)'
       } catch (e) {
         logger.warn('[kb_search] 客户端 MMR 失败，回退 similarity', { error: (e as Error)?.message })
-        const retriever = await buildChromaRetriever(usedCollection, { k: topK, searchType: 'similarity', where })
+        const retriever = await buildChromaRetriever(usedCollection, { k: topK, searchType: 'similarity', where: normalizedWhere })
         hits = await retriever.invoke(query)
         usedType = 'similarity'
       }
@@ -101,13 +134,13 @@ export const kbSearchTool = tool(
         searchType: wantSimilarityExplicit ? 'similarity' : 'mmr',
         mmrLambda: typeof mmrLambda === 'number' ? mmrLambda : 0.5,
         fetchK: typeof fetchK === 'number' ? fetchK : undefined,
-        where
+        where: normalizedWhere
       })
       hits = await retriever.invoke(query)
       usedType = wantSimilarityExplicit ? 'similarity' : 'mmr'
     }
     // 命中为空且给了 where → 自动退化（无过滤重试一次）
-    if (Array.isArray(hits) && hits.length === 0 && where && Object.keys(where).length > 0) {
+    if (Array.isArray(hits) && hits.length === 0 && normalizedWhere && Object.keys(normalizedWhere).length > 0) {
       try {
         logger.info('[kb_search] 命中为空，触发无过滤退化重试', { where })
         if (usedType === 'mmr(client)') {
@@ -161,20 +194,19 @@ export const kbSearchTool = tool(
         k: topK,
         ...(defaultToClientMMR ? { fetchK: typeof fetchK === 'number' && fetchK > 0 ? fetchK : (typeof RERANK_FETCHK === 'number' && RERANK_FETCHK > 0 ? RERANK_FETCHK : Math.max(20, 4 * topK)) } : {}),
         ...(defaultToClientMMR ? { lambda: typeof mmrLambda === 'number' ? mmrLambda : (typeof RERANK_LAMBDA === 'number' ? RERANK_LAMBDA : 0.35) } : {}),
-        ...(where && !fallback ? { where } : {}),
+        ...(normalizedWhere && !fallback ? { where: normalizedWhere } : {}),
         ...(fallback ? { fallback: true } : {})
       },
       context: ctxItems,
       contextText,
       sources: sourceList.map((ref, i) => ({ index: i + 1, ref })),
-      citation_guidelines: '回答时在关键句后用 [n] 引用上方 sources 的 index；证据不足须说明，严禁编造来源或编号；不要原样粘贴 JSON。'
     }
 
     return JSON.stringify(payload)
   },
   {
     name: 'kb_search',
-    description: '检索内部知识库（Chroma）。未指定时默认使用 mmr(client)（客户端重排），k 收敛为 4~8；当 searchType=similarity 时按相似度检索。输出为严格 JSON 字符串（见字段：collection/search/context/contextText/sources/citation_guidelines）。使用规范：最终回答必须在关键结论后用 [n] 引用 sources 的 index；证据不足须说明；严禁编造来源或编号；不要原样粘贴 JSON，仅用其中信息组织自然语言回答。建议 mmr 搭配较大的 fetchK（如 32 或 4*k）以提升多样性。',
+    description: '检索内部知识库（Chroma）。未指定时默认使用 mmr(client)（客户端重排），k 收敛为 6~8；当 searchType=similarity 时按相似度检索。输出为严格 JSON 字符串（见字段：collection/search/context/contextText/sources/citation_guidelines）。使用规范：最终回答必须在关键结论后用 [n] 引用 sources 的 index；证据不足须说明；严禁编造来源或编号；不要原样粘贴 JSON，仅用其中信息组织自然语言回答。where 参数用于按 metadata 过滤，可使用字段：symbolName（符号名称，如 Web3Service）、symbolType（函数/类/常量/模块等）、filePath、language。建议 mmr 搭配较大的 fetchK（如 128 或 4*k）以提升多样性。',
     schema: z.object({
       query: z.string(),
       k: z.number().int().min(1).max(20).optional(),
