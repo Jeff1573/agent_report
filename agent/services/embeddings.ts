@@ -26,7 +26,9 @@ export function makeKbEmbeddings(): OpenAIEmbeddings | GoogleGenerativeAIEmbeddi
     }
     return new GoogleGenerativeAIEmbeddings({
       apiKey,
-      model: KB_EMBED_MODEL
+      model: KB_EMBED_MODEL || 'gemini-embedding-001',
+      // 注意：当前LangChain版本(0.2.18)不支持outputDimensionality参数
+      // 如需自定义维度，请升级到更新版本或使用原生Google GenAI SDK
     })
   }
   return new OpenAIEmbeddings({
