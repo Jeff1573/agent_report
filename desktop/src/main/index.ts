@@ -4,14 +4,18 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { IPC_CHANNELS } from '../shared/ipc'
 import * as agentService from './services/agentService'
+import * as historyService from './services/historyService'
 
 function createWindow(): void {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
     width: 900,
     height: 670,
+    minWidth: 600,    // 最小宽度
+    minHeight: 500,   // 最小高度
     show: false,
     autoHideMenuBar: true,
+    backgroundColor: '#f0f2f5',  // 设置背景色，避免黑色闪烁
     ...(process.platform === 'linux' ? { icon } : {}),
     // 安全基线：禁用 Node、启用上下文隔离，仅通过 preload 暴露受控 API
     webPreferences: {
@@ -76,6 +80,23 @@ app.whenReady().then(() => {
 
   ipcMain.handle(IPC_CHANNELS.AGENT_STOP, async () => {
     await agentService.stopChat()
+  })
+
+  // IPC 白名单：会话历史相关
+  ipcMain.handle(IPC_CHANNELS.HISTORY_SAVE, async (_event, session) => {
+    await historyService.saveSession(session)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.HISTORY_LOAD, async (_event, sessionId: string) => {
+    return historyService.loadSession(sessionId)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.HISTORY_LIST, async () => {
+    return historyService.listSessions()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.HISTORY_DELETE, async (_event, sessionId: string) => {
+    await historyService.deleteSession(sessionId)
   })
 
   createWindow()

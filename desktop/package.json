@@ -28,9 +28,14 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.0",
     "@electron-toolkit/utils": "^3.0.0",
+    "antd": "5.27.4",
+    "highlight.js": "^11.11.1",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "antd": "5.27.4"
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "rehype-raw": "^7.0.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config": "^1.0.2",
@@ -40,20 +45,19 @@
     "@types/node": "^24.5.2",
     "@types/react": "18.3.11",
     "@types/react-dom": "18.3.0",
-    "eslint-plugin-react": "^7.36.1",
-    "eslint-plugin-react-hooks": "^5.0.0",
-    "@vitejs/plugin-react": "^4.3.3",
     "@typescript-eslint/eslint-plugin": "^6.21.0",
     "@typescript-eslint/parser": "^6.21.0",
+    "@vitejs/plugin-react": "^4.3.3",
     "electron": "38.1.2",
     "electron-builder": "26.0.12",
     "electron-vite": "4.0.0",
     "eslint": "^8.56.0",
+    "eslint-plugin-react": "^7.36.1",
+    "eslint-plugin-react-hooks": "^5.0.0",
     "prettier": "^3.2.4",
     "typescript": "^5.3.3",
     "vite": "7.1.6"
-  }
-  ,
+  },
   "overrides": {
     "esbuild": "0.25.10"
   }

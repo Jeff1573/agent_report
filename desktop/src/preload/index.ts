@@ -27,6 +27,12 @@ const api: PreloadApi = {
         })
     },
     stop: () => ipcRenderer.invoke(IPC_CHANNELS.AGENT_STOP)
+  },
+  history: {
+    save: (session) => ipcRenderer.invoke(IPC_CHANNELS.HISTORY_SAVE, session),
+    load: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.HISTORY_LOAD, sessionId),
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.HISTORY_LIST),
+    delete: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.HISTORY_DELETE, sessionId)
   }
 }
 

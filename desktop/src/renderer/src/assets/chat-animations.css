@@ -1,0 +1,106 @@
+/* 聊天界面动画样式 */
+
+/* 淡入动画 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 脉冲动画（用于加载指示器） */
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* 闪烁动画 */
+@keyframes blink {
+  0%, 50%, 100% {
+    opacity: 1;
+  }
+  25%, 75% {
+    opacity: 0.5;
+  }
+}
+
+/* 滑入动画 */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 输入框聚焦动画 */
+.chat-input-focus {
+  transition: all 0.3s ease;
+}
+
+.chat-input-focus:focus {
+  border-color: #667eea !important;
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2) !important;
+}
+
+/* 按钮悬停效果 */
+.chat-button {
+  transition: all 0.2s ease;
+}
+
+.chat-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.chat-button:active {
+  transform: translateY(0);
+}
+
+/* 消息气泡入场动画 */
+.message-bubble {
+  animation: fadeIn 0.3s ease-in;
+}
+
+/* 工具标签动画 */
+.tool-tag {
+  animation: slideIn 0.3s ease-out;
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a1;
+}
