@@ -31,7 +31,7 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = ({
   const [loading, setLoading] = useState(false)
 
   // 加载会话列表
-  const loadSessions = async () => {
+  const loadSessions: () => Promise<void> = async () => {
     setLoading(true)
     try {
       const list = await window.api.history.list()
@@ -45,7 +45,7 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = ({
   }
 
   // 删除会话
-  const handleDelete = async (sessionId: string) => {
+  const handleDelete: (sessionId: string) => Promise<void> = async (sessionId: string) => {
     try {
       await window.api.history.delete(sessionId)
       message.success('会话已删除')
@@ -57,7 +57,7 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = ({
   }
 
   // 加载会话
-  const handleLoadSession = (session: SessionData) => {
+  const handleLoadSession: (session: SessionData) => void = (session: SessionData) => {
     onLoadSession(session)
     onClose()
     message.success(`已加载会话: ${session.title}`)
@@ -90,7 +90,7 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = ({
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description="暂无历史对话"
-          style={{ marginTop: 60 }}
+          className="history-empty"
         />
       ) : (
         <List
@@ -100,63 +100,42 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = ({
             const isCurrent = session.id === currentSessionId
             return (
               <List.Item
-                style={{
-                  padding: '12px',
-                  marginBottom: 8,
-                  background: isCurrent ? '#f0f5ff' : '#ffffff',
-                  borderRadius: '8px',
-                  border: isCurrent ? '2px solid #667eea' : '1px solid #e8e8e8',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
+                className={`history-session-item ${isCurrent ? 'current' : ''}`}
                 onMouseEnter={(e) => {
                   if (!isCurrent) {
-                    e.currentTarget.style.background = '#fafafa'
-                    e.currentTarget.style.borderColor = '#d9d9d9'
+                    e.currentTarget.classList.add('hover')
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (!isCurrent) {
-                    e.currentTarget.style.background = '#ffffff'
-                    e.currentTarget.style.borderColor = '#e8e8e8'
+                    e.currentTarget.classList.remove('hover')
                   }
                 }}
               >
-                <div style={{ width: '100%' }}>
+                <div className="history-session-content">
                   <div
                     onClick={() => handleLoadSession(session)}
-                    style={{ marginBottom: 8 }}
+                    className="history-session-header"
                   >
-                    <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                      <Text
-                        strong
-                        style={{
-                          fontSize: 14,
-                          color: isCurrent ? '#667eea' : '#000',
-                          maxWidth: '220px',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          display: 'inline-block'
-                        }}
-                      >
+                    <div className="history-session-title-row">
+                      <Text className={`history-session-title ${isCurrent ? 'current' : ''}`}>
                         {session.title}
                       </Text>
                       {isCurrent && (
-                        <Tag color="blue" style={{ margin: 0, fontSize: 10 }}>
+                        <Tag color="blue" className="history-session-current-tag">
                           当前
                         </Tag>
                       )}
-                    </Space>
+                    </div>
 
-                    <div style={{ marginTop: 6 }}>
-                      <Space size={12} style={{ fontSize: 11, color: '#999' }}>
-                        <span>
-                          <MessageOutlined style={{ marginRight: 4 }} />
+                    <div className="history-session-meta">
+                      <div className="history-session-info">
+                        <span className="history-session-info-item">
+                          <MessageOutlined className="history-session-info-icon" />
                           {session.messages.length} 条消息
                         </span>
-                        <span>
-                          <ClockCircleOutlined style={{ marginRight: 4 }} />
+                        <span className="history-session-info-item">
+                          <ClockCircleOutlined className="history-session-info-icon" />
                           {new Date(session.updatedAt).toLocaleDateString('zh-CN', {
                             month: 'short',
                             day: 'numeric',
@@ -164,11 +143,11 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = ({
                             minute: '2-digit'
                           })}
                         </span>
-                      </Space>
+                      </div>
                     </div>
                   </div>
 
-                  <div style={{ textAlign: 'right' }}>
+                  <div className="history-session-actions">
                     <Popconfirm
                       title="删除会话"
                       description="确定要删除这个会话吗？"
@@ -182,6 +161,7 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = ({
                         danger
                         size="small"
                         icon={<DeleteOutlined />}
+                        className="history-session-delete-btn"
                         onClick={(e) => e.stopPropagation()}
                       >
                         删除

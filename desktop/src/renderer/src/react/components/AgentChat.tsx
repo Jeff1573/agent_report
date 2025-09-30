@@ -7,7 +7,7 @@
  * - 会话历史管理
  */
 
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, JSX } from 'react'
 import { Input, Button, Card, Space, Typography, Tag, Spin, message as antMessage, Tooltip, Modal } from 'antd'
 import { SendOutlined, StopOutlined, RobotOutlined, UserOutlined, ToolOutlined, PlusOutlined, DeleteOutlined, HistoryOutlined } from '@ant-design/icons'
 import type { AgentStreamEvent, SessionData } from '../../../../shared/ipc'
@@ -16,7 +16,7 @@ import { HistorySidebar } from './HistorySidebar'
 import '../../assets/chat-animations.css'
 
 const { TextArea } = Input
-const { Text, Paragraph } = Typography
+const { Text } = Typography
 
 interface Message {
   id: string
@@ -53,7 +53,7 @@ export const AgentChat: React.FC = () => {
 
   // 应用启动时加载最近的会话
   useEffect(() => {
-    const loadLastSession = async () => {
+    const loadLastSession: () => Promise<void> = async () => {
       try {
         const sessions = await window.api.history.list()
         if (sessions.length > 0) {
@@ -72,7 +72,7 @@ export const AgentChat: React.FC = () => {
   useEffect(() => {
     if (messages.length === 0) return
 
-    const saveSession = async () => {
+    const saveSession: () => Promise<void> = async () => {
       try {
         const session: SessionData = {
           id: sessionId,
@@ -93,7 +93,7 @@ export const AgentChat: React.FC = () => {
     return () => clearTimeout(timer)
   }, [messages, sessionId])
 
-  const handleSend = async () => {
+  const handleSend: () => Promise<void> = async () => {
     if (!input.trim() || isLoading) return
 
     const userMessage: Message = {
@@ -129,23 +129,23 @@ export const AgentChat: React.FC = () => {
     }
   }
 
-  const handleStreamEvent = (event: AgentStreamEvent) => {
-    switch (event.type) {
+  const handleStreamEvent: (streamEvent: AgentStreamEvent) => void = (streamEvent: AgentStreamEvent) => {
+    switch (streamEvent.type) {
       case 'model-token':
-        if (event.token) {
-          setCurrentContent(prev => prev + event.token)
+        if (streamEvent.token) {
+          setCurrentContent(prev => prev + streamEvent.token)
         }
         break
 
       case 'assistant-message':
-        if (event.content) {
-          setCurrentContent(event.content)
+        if (streamEvent.content) {
+          setCurrentContent(streamEvent.content)
         }
         break
 
       case 'tool-call':
-        if (event.name) {
-          setCurrentToolCalls(prev => [...prev, { name: event.name!, args: event.args }])
+        if (streamEvent.name) {
+          setCurrentToolCalls(prev => [...prev, { name: streamEvent.name!, args: streamEvent.args }])
         }
         break
 
@@ -171,13 +171,13 @@ export const AgentChat: React.FC = () => {
         break
 
       case 'error':
-        console.error('Stream error:', event.error)
-        antMessage.error(`错误: ${event.error}`)
+        console.error('Stream error:', streamEvent.error)
+        antMessage.error(`错误: ${streamEvent.error}`)
         break
     }
   }
 
-  const handleStop = async () => {
+  const handleStop: () => Promise<void> = async () => {
     try {
       await window.api.agent.stop()
       setIsLoading(false)
@@ -187,7 +187,7 @@ export const AgentChat: React.FC = () => {
     }
   }
 
-  const handleNewChat = () => {
+  const handleNewChat: () => void = () => {
     Modal.confirm({
       title: '开始新对话',
       content: '当前对话将被保存，是否开始新对话？',
@@ -206,7 +206,7 @@ export const AgentChat: React.FC = () => {
     })
   }
 
-  const handleClearChat = () => {
+  const handleClearChat: () => void = () => {
     Modal.confirm({
       title: '清空对话',
       content: '确定要清空当前对话吗？此操作不可恢复。',
@@ -223,110 +223,65 @@ export const AgentChat: React.FC = () => {
     })
   }
 
-  const handleLoadSession = (session: SessionData) => {
-    setMessages(session.messages)
-    setSessionId(session.id)
+  const handleLoadSession: (sessionData: SessionData) => void = (sessionData: SessionData) => {
+    setMessages(sessionData.messages)
+    setSessionId(sessionData.id)
     setInput('')
     setCurrentContent('')
     setCurrentToolCalls([])
   }
 
-  const renderMessage = (msg: Message) => {
-    const isUser = msg.role === 'user'
-    
+  const renderMessage: (message: Message) => JSX.Element = (message: Message) => {
+    const isUser = message.role === 'user'
+
     return (
       <div
-        key={msg.id}
-        style={{
-          display: 'flex',
-          justifyContent: isUser ? 'flex-end' : 'flex-start',
-          marginBottom: 12,
-          padding: '0 4px'
-        }}
+        key={message.id}
+        className={`message-wrapper ${isUser ? 'user' : 'assistant'}`}
       >
         <div
-          style={{
-            maxWidth: '80%',
-            minWidth: '100px',
-            background: isUser 
-              ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' 
-              : '#ffffff',
-            borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-            padding: '10px 14px',
-            boxShadow: '0 1px 4px rgba(0,0,0,0.1)',
-            color: isUser ? '#ffffff' : '#000000',
-            border: isUser ? 'none' : '1px solid #e8e8e8'
-          }}
+          className={`message-bubble ${isUser ? 'user' : 'assistant'}`}
         >
-          <Space direction="vertical" size={6} style={{ width: '100%' }}>
-            {/* 头部信息 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: 0.85, marginBottom: 4 }}>
-              {isUser ? (
-                <UserOutlined style={{ fontSize: 12, color: '#ffffff' }} />
-              ) : (
-                <RobotOutlined style={{ fontSize: 12, color: '#667eea' }} />
-              )}
-              <Text 
-                strong 
-                style={{ 
-                  fontSize: 12,
-                  color: isUser ? '#ffffff' : '#667eea'
-                }}
-              >
-                {isUser ? '你' : 'MindForge'}
-              </Text>
-              <Text 
-                style={{ 
-                  fontSize: 10, 
-                  opacity: 0.6,
-                  color: isUser ? '#ffffff' : '#999999',
-                  marginLeft: 'auto'
-                }}
-              >
-                {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { 
-                  hour: '2-digit', 
-                  minute: '2-digit' 
-                })}
-              </Text>
+          <div className="message-header">
+            <div className={`message-avatar ${isUser ? 'user' : 'assistant'}`}>
+              {isUser ? <UserOutlined /> : <RobotOutlined />}
             </div>
-            
-            {/* 消息内容 */}
-            <div style={{ fontSize: 14, lineHeight: 1.5 }}>
-              {isUser ? (
-                <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                  {msg.content}
-                </div>
-              ) : (
-                <div style={{ color: '#000000' }}>
-                  <MarkdownMessage content={msg.content} />
-                </div>
-              )}
-            </div>
+            <Text className={`message-sender ${isUser ? 'user' : 'assistant'}`}>
+              {isUser ? '你' : 'MindForge'}
+            </Text>
+            <Text className={`message-timestamp ${isUser ? 'user' : 'assistant'}`}>
+              {new Date(message.timestamp).toLocaleTimeString('zh-CN', {
+                hour: '2-digit',
+                minute: '2-digit'
+              })}
+            </Text>
+          </div>
 
-            {/* 工具调用标签 */}
-            {msg.toolCalls && msg.toolCalls.length > 0 && (
-              <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid rgba(0,0,0,0.06)' }}>
-                <Space wrap size={[4, 4]}>
-                  {msg.toolCalls.map((call, idx) => (
-                    <Tag 
-                      key={idx} 
-                      icon={<ToolOutlined />} 
-                      color="blue"
-                      style={{ 
-                        margin: 0,
-                        fontSize: 10,
-                        padding: '0 6px',
-                        borderRadius: 8,
-                        lineHeight: '18px'
-                      }}
-                    >
-                      {call.name}
-                    </Tag>
-                  ))}
-                </Space>
-              </div>
+          <div className={`message-content ${isUser ? 'user' : 'assistant'}`}>
+            {isUser ? (
+              <div>{message.content}</div>
+            ) : (
+              <MarkdownMessage content={message.content} />
             )}
-          </Space>
+          </div>
+
+          {/* 工具调用标签 */}
+          {message.toolCalls && message.toolCalls.length > 0 && (
+            <div className="tool-calls-container">
+              <Space wrap size={[4, 4]}>
+                {message.toolCalls.map((call, idx) => (
+                  <Tag
+                    key={idx}
+                    icon={<ToolOutlined />}
+                    color="blue"
+                    className="tool-tag"
+                  >
+                    {call.name}
+                  </Tag>
+                ))}
+              </Space>
+            </div>
+          )}
         </div>
       </div>
     )
@@ -342,40 +297,34 @@ export const AgentChat: React.FC = () => {
         onLoadSession={handleLoadSession}
       />
 
-      <div style={{ 
-        height: '100vh', 
-        display: 'flex', 
-        flexDirection: 'column', 
-        padding: '16px',
-        background: '#f0f2f5'
-      }}>
+      <div className="chat-container">
         <Card
           title={
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Space>
-                <RobotOutlined style={{ fontSize: 20, color: '#667eea' }} />
-                <span style={{ fontSize: 16, fontWeight: 'bold' }}>MindForge Agent</span>
-              </Space>
-              <Space>
+            <div className="card-title">
+              <div className="card-title-left">
+                <RobotOutlined className="card-title-icon" />
+                <span className="card-title-text">MindForge Agent</span>
+              </div>
+              <div className="card-title-actions">
                 <Tooltip title="历史对话">
-                  <Button 
-                    icon={<HistoryOutlined />} 
+                  <Button
+                    icon={<HistoryOutlined />}
                     onClick={() => setHistoryVisible(true)}
                     type="text"
                     size="small"
                   />
                 </Tooltip>
                 <Tooltip title="新建对话">
-                  <Button 
-                    icon={<PlusOutlined />} 
+                  <Button
+                    icon={<PlusOutlined />}
                     onClick={handleNewChat}
                     type="text"
                     size="small"
                   />
                 </Tooltip>
                 <Tooltip title="清空对话">
-                  <Button 
-                    icon={<DeleteOutlined />} 
+                  <Button
+                    icon={<DeleteOutlined />}
                     onClick={handleClearChat}
                     type="text"
                     danger
@@ -383,49 +332,28 @@ export const AgentChat: React.FC = () => {
                     size="small"
                   />
                 </Tooltip>
-              </Space>
+              </div>
             </div>
           }
-        style={{ 
-          flex: 1, 
-          display: 'flex', 
-          flexDirection: 'column',
-          overflow: 'hidden',
-          borderRadius: '12px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-        }}
-        bodyStyle={{ 
-          flex: 1, 
-          display: 'flex', 
-          flexDirection: 'column',
-          padding: '16px',
-          overflow: 'hidden'
-        }}
-      >
+          className="chat-card"
+          bodyStyle={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            padding: '16px',
+            overflow: 'hidden'
+          }}
+        >
         {/* 消息列表容器 - 关键：这里需要正确设置滚动 */}
-        <div style={{ 
-          flex: 1, 
-          overflowY: 'auto',
-          overflowX: 'hidden',
-          marginBottom: 16,
-          paddingRight: 4
-        }}>
+        <div className="messages-container">
           {messages.length === 0 && !isLoading && (
-            <div style={{ 
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '100%',
-              color: '#999',
-              padding: '20px'
-            }}>
-              <RobotOutlined style={{ fontSize: 64, marginBottom: 24, color: '#667eea' }} />
-              <h3 style={{ margin: '0 0 12px 0', color: '#333' }}>欢迎使用 MindForge Agent</h3>
-              <p style={{ margin: '0 0 8px 0', fontSize: 14, textAlign: 'center' }}>
+            <div className="empty-state">
+              <RobotOutlined className="empty-state-icon" />
+              <h3 className="empty-state-title">欢迎使用 MindForge Agent</h3>
+              <p className="empty-state-subtitle">
                 智能助手，随时为您服务
               </p>
-              <p style={{ margin: 0, fontSize: 12, color: '#999', textAlign: 'center' }}>
+              <p className="empty-state-description">
                 💡 知识库检索 · 🌐 网络搜索 · 🔧 MCP 工具调用
               </p>
             </div>
@@ -435,81 +363,44 @@ export const AgentChat: React.FC = () => {
 
           {/* 当前流式内容 */}
           {isLoading && currentContent && (
-            <div 
-              style={{ 
-                display: 'flex', 
-                justifyContent: 'flex-start', 
-                marginBottom: 12,
-                padding: '0 4px'
-              }}
-            >
-              <div
-                style={{
-                  maxWidth: '80%',
-                  minWidth: '100px',
-                  background: '#ffffff',
-                  borderRadius: '16px 16px 16px 4px',
-                  padding: '10px 14px',
-                  boxShadow: '0 1px 4px rgba(0,0,0,0.1)',
-                  border: '1px solid #e8e8e8',
-                  animation: 'fadeIn 0.3s ease-in'
-                }}
-              >
-                <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                  {/* 头部信息 */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: 0.85, marginBottom: 4 }}>
-                    <RobotOutlined style={{ fontSize: 12, color: '#667eea' }} />
-                    <Text strong style={{ fontSize: 12, color: '#667eea' }}>
-                      MindForge
-                    </Text>
-                    <Spin size="small" style={{ marginLeft: 4 }} />
-                    <span style={{ 
-                      display: 'inline-block',
-                      width: 6,
-                      height: 6,
-                      background: '#52c41a',
-                      borderRadius: '50%',
-                      marginLeft: 4,
-                      animation: 'pulse 1.5s ease-in-out infinite'
-                    }} />
-                  </div>
-                  
-                  {/* 流式内容也使用 Markdown 渲染 */}
-                  <div style={{ fontSize: 14, lineHeight: 1.5, color: '#000000' }}>
-                    <MarkdownMessage content={currentContent} />
-                  </div>
+            <div className="message-wrapper assistant">
+              <div className="message-bubble streaming">
+                <div className="streaming-header">
+                  <RobotOutlined className="message-avatar assistant" />
+                  <Text className="message-sender assistant">MindForge</Text>
+                  <Spin size="small" />
+                  <span className="streaming-indicator" />
+                </div>
 
-                  {/* 工具调用标签 */}
-                  {currentToolCalls.length > 0 && (
-                    <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid rgba(0,0,0,0.06)' }}>
-                      <Space wrap size={[4, 4]}>
-                        {currentToolCalls.map((call, idx) => (
-                          <Tag 
-                            key={idx} 
-                            icon={<ToolOutlined />} 
-                            color="processing"
-                            style={{ 
-                              margin: 0,
-                              fontSize: 10,
-                              padding: '0 6px',
-                              borderRadius: 8,
-                              lineHeight: '18px'
-                            }}
-                          >
-                            {call.name}
-                          </Tag>
-                        ))}
-                      </Space>
-                    </div>
-                  )}
-                </Space>
+                {/* 流式内容也使用 Markdown 渲染 */}
+                <div className="message-content assistant">
+                  <MarkdownMessage content={currentContent} />
+                </div>
+
+                {/* 工具调用标签 */}
+                {currentToolCalls.length > 0 && (
+                  <div className="tool-calls-container">
+                    <Space wrap size={[4, 4]}>
+                      {currentToolCalls.map((call, idx) => (
+                        <Tag
+                          key={idx}
+                          icon={<ToolOutlined />}
+                          color="processing"
+                          className="tool-tag"
+                        >
+                          {call.name}
+                        </Tag>
+                      ))}
+                    </Space>
+                  </div>
+                )}
               </div>
             </div>
           )}
 
           {/* 纯加载状态（还没有内容时） */}
           {isLoading && !currentContent && (
-            <div style={{ textAlign: 'center', padding: 24 }}>
+            <div className="loading-spinner">
               <Spin tip="思考中..." />
             </div>
           )}
@@ -518,14 +409,8 @@ export const AgentChat: React.FC = () => {
         </div>
 
         {/* 输入区域 - 固定在底部，不参与滚动 */}
-        <div style={{ 
-          background: '#ffffff', 
-          padding: '12px', 
-          borderRadius: '8px',
-          border: '1px solid #e8e8e8',
-          flexShrink: 0
-        }}>
-          <Space.Compact style={{ width: '100%' }}>
+        <div className="input-area">
+          <Space.Compact className="input-compact">
             <TextArea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -538,14 +423,7 @@ export const AgentChat: React.FC = () => {
               placeholder="输入消息... (Shift+Enter 换行)"
               autoSize={{ minRows: 1, maxRows: 4 }}
               disabled={isLoading}
-              className="chat-input-focus"
-              style={{ 
-                flex: 1,
-                borderRadius: '6px 0 0 6px',
-                fontSize: 14,
-                padding: '8px 12px',
-                border: '1px solid #d9d9d9'
-              }}
+              className="chat-input-focus input-textarea"
             />
             {isLoading ? (
               <Button
@@ -553,13 +431,7 @@ export const AgentChat: React.FC = () => {
                 danger
                 icon={<StopOutlined />}
                 onClick={handleStop}
-                className="chat-button"
-                style={{ 
-                  borderRadius: '0 6px 6px 0',
-                  height: 'auto',
-                  minHeight: '36px',
-                  padding: '0 16px'
-                }}
+                className="chat-button input-button stop"
               >
                 停止
               </Button>
@@ -569,15 +441,7 @@ export const AgentChat: React.FC = () => {
                 icon={<SendOutlined />}
                 onClick={handleSend}
                 disabled={!input.trim()}
-                className="chat-button"
-                style={{ 
-                  borderRadius: '0 6px 6px 0',
-                  height: 'auto',
-                  minHeight: '36px',
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                  border: 'none',
-                  padding: '0 16px'
-                }}
+                className="chat-button input-button send"
               >
                 发送
               </Button>
