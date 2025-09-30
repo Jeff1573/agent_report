@@ -2,6 +2,8 @@ appId: com.mindforge.desktop
 productName: MindForge Agent
 directories:
   buildResources: build
+  output: dist
+icon: build/icon.png
 files:
   - '!**/.vscode/*'
   - '!src/*'

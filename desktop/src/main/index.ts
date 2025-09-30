@@ -16,7 +16,7 @@ function createWindow(): void {
     show: false,
     autoHideMenuBar: true,
     backgroundColor: '#f0f2f5',  // 设置背景色，避免黑色闪烁
-    ...(process.platform === 'linux' ? { icon } : {}),
+    icon,
     // 安全基线：禁用 Node、启用上下文隔离，仅通过 preload 暴露受控 API
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
