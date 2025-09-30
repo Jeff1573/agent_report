@@ -45,9 +45,7 @@
     "typescript": "^5.9.2"
   },
   "dependencies": {
-    "@esbuild/win32-x64": "^0.25.10",
     "@modelcontextprotocol/sdk": "^1.18.2",
-    "@rollup/rollup-win32-x64-msvc": "^4.52.3",
     "fast-glob": "^3.3.3",
     "ignore": "^7.0.5",
     "p-limit": "^7.1.1",
