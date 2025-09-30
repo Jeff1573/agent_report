@@ -343,6 +343,38 @@ import { sanitizeCollectionName, generateRandomCollectionName } from '../config/
 import { logger } from '../utils/logger.js'
 
 /**
+ * 检测嵌入模型是否支持批量嵌入。
+ * 
+ * 背景：某些 Gemini 版本的批量嵌入存在 bug，返回空向量。
+ * 通过小批量测试来检测是否需要降级为单个嵌入模式。
+ * 
+ * @param embeddings 嵌入模型实例
+ * @param testText 测试文本
+ * @returns true 表示支持批量嵌入，false 表示需要单个嵌入
+ */
+async function testBatchEmbedding(
+  embeddings: OpenAIEmbeddings | GoogleGenerativeAIEmbeddings,
+  testText: string
+): Promise<boolean> {
+  try {
+    const testVectors = await embeddings.embedDocuments([testText])
+    
+    // 检查返回的向量是否有效
+    if (!testVectors || testVectors.length === 0 || testVectors[0].length === 0) {
+      logger.warn('[testBatchEmbedding] 批量嵌入返回空向量')
+      return false
+    }
+    
+    return true
+  } catch (error) {
+    logger.warn('[testBatchEmbedding] 批量嵌入测试失败', {
+      error: (error as Error).message
+    })
+    return false
+  }
+}
+
+/**
  * 确保 Chroma 集合存在。
  * @param embeddings Embeddings 实例
  * @param collectionName 集合名
@@ -425,22 +457,13 @@ export async function upsertToChroma(
   // 创建向量嵌入实例
   const embeddings = makeEmbeddings()
 
-  // 检查批量嵌入是否正常工作（特别是 Gemini）
-  let useBatchEmbedding = true
-  if (KB_EMBED_PROVIDER === 'gemini') {
-    try {
-      // 测试小批量嵌入
-      const testVectors = await embeddings.embedDocuments([docs[0].pageContent])
-      if (!testVectors || testVectors.length === 0 || testVectors[0].length === 0) {
-        logger.warn('[upsertToChroma] Gemini 批量嵌入返回空向量，将使用单个嵌入模式')
-        useBatchEmbedding = false
-      }
-    } catch (e) {
-      logger.warn('[upsertToChroma] Gemini 批量嵌入测试失败，将使用单个嵌入模式', {
-        error: (e as Error).message
-      })
-      useBatchEmbedding = false
-    }
+  // 检测嵌入模型是否支持批量嵌入（Gemini 某些版本有 bug）
+  const useBatchEmbedding = KB_EMBED_PROVIDER === 'gemini'
+    ? await testBatchEmbedding(embeddings, docs[0].pageContent)
+    : true
+  
+  if (!useBatchEmbedding) {
+    logger.info('[upsertToChroma] 检测到批量嵌入不可用，将使用单个嵌入模式')
   }
 
   if (useBatchEmbedding) {

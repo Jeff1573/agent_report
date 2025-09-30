@@ -168,3 +168,107 @@ export function generateRandomCollectionName(): string {
 export function sanitizeCollectionName(name: string): string {
   return (name || '').replace(/[^a-zA-Z0-9_-]/g, '-');
 }
+
+/**
+ * 验证必需的环境配置。
+ * 
+ * 在应用启动时调用此函数，确保所有必需的环境变量都已正确配置。
+ * 如果缺少必需配置，将抛出带有详细说明的错误。
+ * 
+ * @throws {Error} 当缺少必需的环境变量时抛出
+ * 
+ * @example
+ * // 在应用启动时调用
+ * try {
+ *   validateConfig();
+ *   console.log('配置验证通过');
+ * } catch (error) {
+ *   console.error('配置错误:', error.message);
+ *   process.exit(1);
+ * }
+ */
+export function validateConfig(): void {
+  const errors: string[] = [];
+
+  // 1. LLM 基础配置（必需）
+  if (!OPENAI_API_KEY || OPENAI_API_KEY.trim().length === 0) {
+    errors.push('OPENAI_API_KEY - LLM API 密钥未配置');
+  }
+  if (!OPENAI_MODEL || OPENAI_MODEL.trim().length === 0) {
+    errors.push('OPENAI_MODEL - LLM 模型名称未配置（如: gpt-4, deepseek-chat）');
+  }
+
+  // 2. 向量数据库配置（RAG 功能必需）
+  if (!CHROMA_URL || CHROMA_URL.trim().length === 0) {
+    errors.push('CHROMA_URL - ChromaDB 向量数据库 URL 未配置（如: http://localhost:8000）');
+  }
+
+  // 3. 嵌入模型配置（RAG 功能必需）
+  if (KB_EMBED_PROVIDER === 'gemini') {
+    if (!GOOGLE_API_KEY || GOOGLE_API_KEY.trim().length === 0) {
+      errors.push('GOOGLE_API_KEY - 使用 Gemini 嵌入需要配置 Google API Key');
+    }
+  } else {
+    // 默认使用 OpenAI 嵌入
+    if (!KB_EMBED_MODEL || KB_EMBED_MODEL.trim().length === 0) {
+      errors.push('KB_EMBED_MODEL - OpenAI 嵌入模型未配置（如: text-embedding-3-small）');
+    }
+  }
+
+  // 4. 知识库集合名（检索功能建议配置）
+  if (!KB_COLLECTION || KB_COLLECTION.trim().length === 0) {
+    errors.push('KB_COLLECTION - 知识库集合名未配置（检索时需要，建议配置）');
+  }
+
+  // 5. Postgres Checkpointer 配置（可选，但若使用则必需）
+  if (CHECKPOINT_MODE === 'postgres') {
+    if (!CHECKPOINT_POSTGRES_URL || CHECKPOINT_POSTGRES_URL.trim().length === 0) {
+      errors.push('CHECKPOINT_POSTGRES_URL - 使用 Postgres 持久化需要配置数据库连接 URL');
+    }
+  }
+
+  // 抛出详细的配置错误
+  if (errors.length > 0) {
+    const errorMessage = [
+      '❌ 配置验证失败，缺少以下必需的环境变量：\n',
+      ...errors.map((err, i) => `  ${i + 1}. ${err}`),
+      '\n💡 请检查 .env 文件或环境变量配置',
+      '📝 参考 .env.example 或文档了解配置说明'
+    ].join('\n');
+    
+    throw new Error(errorMessage);
+  }
+}
+
+/**
+ * 获取当前配置摘要（用于调试和日志）。
+ * 
+ * @returns {object} 配置摘要对象（不包含敏感信息）
+ */
+export function getConfigSummary(): Record<string, unknown> {
+  return {
+    llm: {
+      provider: OPENAI_BASE_URL ? 'custom' : 'openai',
+      model: OPENAI_MODEL,
+      hasApiKey: Boolean(OPENAI_API_KEY)
+    },
+    embeddings: {
+      provider: KB_EMBED_PROVIDER,
+      model: KB_EMBED_MODEL || 'default',
+      hasApiKey: KB_EMBED_PROVIDER === 'gemini' ? Boolean(GOOGLE_API_KEY) : Boolean(OPENAI_API_KEY)
+    },
+    vectorStore: {
+      url: CHROMA_URL,
+      collection: KB_COLLECTION || 'not-configured'
+    },
+    checkpoint: {
+      mode: CHECKPOINT_MODE,
+      hasPostgresUrl: Boolean(CHECKPOINT_POSTGRES_URL)
+    },
+    limits: {
+      recursionLimit: RECURSION_LIMIT,
+      toolMaxCalls: TOOL_MAX_CALLS,
+      toolTimeout: TOOL_TIMEOUT_MS
+    }
+  };
+}

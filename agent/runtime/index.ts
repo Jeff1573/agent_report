@@ -12,7 +12,7 @@ import { logger } from '../utils/logger.js';
 import type { StreamEvent, InteractionSegment, Summarizer, AssistantMessageEvent } from '../stream/types.js';
 import { observeValues, observeEvents } from '../stream/observer.js';
 import { createCheckpointer, type PersistenceMode } from './persistence.js';
-import { CHECKPOINT_MODE, THREAD_ID_FALLBACK, RECURSION_LIMIT, TOOL_MAX_CALLS, TOOL_TIMEOUT_MS, TOOL_RETRY_ATTEMPTS } from '../config/env.js';
+import { CHECKPOINT_MODE, THREAD_ID_FALLBACK, RECURSION_LIMIT, TOOL_MAX_CALLS, TOOL_TIMEOUT_MS, TOOL_RETRY_ATTEMPTS, validateConfig } from '../config/env.js';
 import { defaultSummarizer } from '../stream/summarizers.js';
 import { getMCPTools, cleanupMCPClient, type MultiServerMCPClient } from '../tools/mcp.js';
 import type { AnyTool, ToolCallArgs, LLMResponse, ToolResult, GraphConfig, KBSearchResult, SourceReference } from './types.js';
@@ -97,6 +97,14 @@ class SegmentAccumulator {
 
 /** 创建运行时实例 */
 export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<AgentRuntime> {
+  // 启动时验证配置
+  try {
+    validateConfig();
+  } catch (error) {
+    logger.error('配置验证失败:', error);
+    throw error;
+  }
+  
   let tools: AnyTool[] = [];
   let mcpClient: MultiServerMCPClient | undefined;
   let toolCallCount = 0; // 总工具调用计数器
