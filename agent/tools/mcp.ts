@@ -115,7 +115,8 @@ export async function getMCPTools(configPath?: string): Promise<{ tools: AnyTool
     logger.error('Failed to load MCP tools:', error);
     // 出错时也要关闭客户端
     try {
-      // await client.close();
+      await client.close();
+      logger.info('MCP client closed after failure');
     } catch (closeError) {
       logger.error('Error closing MCP client after failure:', closeError);
     }

@@ -110,12 +110,22 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
     return true;
   }
 
-  // 工具调用包装器 - 添加限制、超时和重试（适用于所有工具）
-  function wrapTool<T extends AnyTool>(tool: T): T {
-    const originalCall = tool.call.bind(tool);
+  /**
+   * MCP 工具调用包装器：添加调用次数限制、超时和重试机制。
+   * 
+   * 注意：此包装器仅用于 MCP 工具，不应用于内置工具（kb_search、tavily等）。
+   * 
+   * @param tool MCP 工具实例
+   * @returns 包装后的工具实例
+   */
+  function wrapMCPTool(tool: any): any {
+    const originalCall = tool.call?.bind(tool);
+    if (!originalCall) {
+      logger.warn('工具缺少 call 方法，跳过包装:', tool.name);
+      return tool;
+    }
 
-    // 类型安全的包装
-    (tool as unknown as { call: (...args: unknown[]) => Promise<unknown> }).call = async (...args: unknown[]) => {
+    tool.call = async (...args: unknown[]) => {
       // 1. 检查调用次数限制
       if (!checkToolCallLimit()) {
         throw new Error(`工具调用次数已达到限制 (${TOOL_MAX_CALLS})，无法执行更多工具调用`);
@@ -168,8 +178,8 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
       // 尝试加载MCP工具
       try {
         const mcpResult = await getMCPTools();
-        // 为每个MCP工具应用调用限制包装器
-        const wrappedMCPTools = mcpResult.tools.map(wrapTool as any) as AnyTool[];
+        // 为每个MCP工具应用调用限制、超时和重试包装器
+        const wrappedMCPTools = mcpResult.tools.map(wrapMCPTool) as AnyTool[];
         tools.push(...wrappedMCPTools);
         mcpClient = mcpResult.client;
         logger.info(`Loaded ${wrappedMCPTools.length} MCP tools with call limits (${TOOL_MAX_CALLS} max total calls)`);

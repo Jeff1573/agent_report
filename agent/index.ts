@@ -98,6 +98,27 @@ async function main() {
   const threadId = (cliThreadId && cliThreadId.trim()) || (THREAD_ID_FALLBACK && THREAD_ID_FALLBACK.trim()) || undefined;
 
   const log = threadId ? createLogger({ threadId }) : logger;
+  
+  // 信号处理：优雅退出
+  let isExiting = false;
+  const gracefulShutdown = async (signal: string) => {
+    if (isExiting) return; // 防止重复执行
+    isExiting = true;
+    
+    log.info(`\n收到 ${signal} 信号，正在优雅退出...`);
+    try {
+      await runtime.close();
+      log.info('资源清理完成');
+      process.exit(0);
+    } catch (error) {
+      log.error('资源清理失败:', error);
+      process.exit(1);
+    }
+  };
+  
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));   // Ctrl+C
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM')); // kill 命令
+  
   log.info(`mode=${mode} summary=${summary}`);
   if (threadId) log.info(`threadId=${threadId}`);
   log.info('input:', query);
@@ -161,7 +182,7 @@ async function main() {
   } finally {
     // 清理运行时资源
     try {
-      // await runtime.close();
+      await runtime.close();
       log.info('Runtime closed successfully');
     } catch (closeError) {
       log.error('Error closing runtime:', closeError);
