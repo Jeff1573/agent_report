@@ -21,8 +21,8 @@
     "demo:kb:where": "tsx examples/kb-where-check.ts",
     "demo:integrity": "tsx examples/runtime-integrity-test.ts",
     "ingest": "tsx scripts/ingest-docs.ts",
-    "ingest:help": "tsx scripts/ingest-docs.ts --help",
-    "ingest:code": "tsx scripts/ingest-code-with-ast.ts"
+    "ingest:help": "bun run scripts/ingest-docs.ts --help",
+    "ingest:code": "bun run scripts/ingest-code-with-ast.ts"
   },
   "devDependencies": {
     "@types/node": "^22.7.4",

@@ -56,19 +56,43 @@ function joinWithLimit(parts: string[], limit: number): string {
  * @param {number=} params.mmrLambda - MMR 折中系数（0~1），默认 0.5
  * @param {number=} params.fetchK - 当 searchType=mmr 时的候选规模，默认 max(32, 4*k)
  */
+/**
+ * 规范化 where 条件：
+ * 1. 统一字段名（symbol_name -> symbolName）
+ * 2. 统一 symbolType 值为小写
+ * 3. 多个条件转换为 ChromaDB 要求的 $and 格式
+ */
 function normalizeWhere(raw?: Record<string, unknown>): Record<string, unknown> | undefined {
   if (!raw || typeof raw !== 'object') return raw
-  const normalized: Record<string, unknown> = {}
+  
+  // 如果已经是操作符格式，直接返回
+  if ('$and' in raw || '$or' in raw || '$not' in raw) {
+    return raw
+  }
+  
+  const conditions: Array<Record<string, unknown>> = []
+  
   for (const [key, value] of Object.entries(raw)) {
     let finalKey = key
-    // 统一 symbol_name → symbolName 等常见写法
+    let finalValue = value
+    
+    // 统一字段名
     if (key === 'symbol_name') finalKey = METADATA_KEYS.symbolName
     if (key === 'symbol_type') finalKey = METADATA_KEYS.symbolType
     if (key === 'file_path') finalKey = METADATA_KEYS.filePath
 
-    normalized[finalKey] = value
+    // symbolType 统一转小写
+    if (finalKey === METADATA_KEYS.symbolType && typeof value === 'string') {
+      finalValue = value.toLowerCase()
+    }
+
+    conditions.push({ [finalKey]: finalValue })
   }
-  return normalized
+  
+  // ChromaDB 要求：多条件必须用 $and
+  if (conditions.length === 0) return undefined
+  if (conditions.length === 1) return conditions[0]
+  return { $and: conditions }
 }
 
 export const kbSearchTool = tool(

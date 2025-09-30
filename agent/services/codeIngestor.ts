@@ -73,6 +73,7 @@ function shouldKeepSymbol(symbol: any, allow: Set<string>): boolean {
 
 /**
  * 从解析结果构造文档。
+ * 注意：symbolType 统一转为小写，确保与查询时的格式一致。
  */
 function makeDoc(parsed: any, sym: any, code: string): Document {
   return new Document({
@@ -81,7 +82,7 @@ function makeDoc(parsed: any, sym: any, code: string): Document {
       [METADATA_KEYS.filePath]: String(parsed?.filePath || ''),
       [METADATA_KEYS.language]: String(parsed?.language || ''),
       [METADATA_KEYS.symbolName]: String(sym?.name || ''),
-      [METADATA_KEYS.symbolType]: String(sym?.type || ''),
+      [METADATA_KEYS.symbolType]: String(sym?.type || '').toLowerCase(),
       [METADATA_KEYS.startLine]: Number(sym?.range?.start?.line ?? -1),
       [METADATA_KEYS.endLine]: Number(sym?.range?.end?.line ?? -1)
     }
