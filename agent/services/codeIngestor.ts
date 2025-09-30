@@ -224,7 +224,7 @@ export async function ingestCode(options: IngestCodeOptions): Promise<IngestSumm
     })
 
     if (docs.length === 0) {
-      logger.warn('无可写入的文档，流程结束')
+      logger.info('无可写入的文档，流程结束')
       return { files: files.length, fileOk, symOk, symSkip, fallbackDocs, docs: docs.length }
     }
 

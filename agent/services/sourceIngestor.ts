@@ -41,7 +41,7 @@ export async function ingestSourceWithFallback(options: SourceIngestOptions): Pr
         return summary.docs
       }
     } catch (error) {
-      logger.warn('[ingestSourceWithFallback] AST 入库失败，将回退常规路径', {
+      logger.info('[ingestSourceWithFallback] AST 入库失败，将回退常规路径', {
         filePath,
         collection,
         error: (error as Error).message

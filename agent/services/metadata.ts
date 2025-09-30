@@ -67,7 +67,9 @@ function detectLang(text: string): MetaLang {
 /** 从路径与扩展名推断语言与模块 */
 function inferFromPath(filePath: string): { lang?: MetaLang; module?: string; version?: string; tags?: string[] } {
   const res: { lang?: MetaLang; module?: string; version?: string; tags?: string[] } = {}
-  const p = (filePath || '').replaceAll('\\', '/').toLowerCase()
+  // 使用 path.normalize 安全处理路径，然后统一为 POSIX 风格
+  const normalized = path.normalize(filePath || '').replace(/\\/g, '/')
+  const p = normalized.toLowerCase()
   if (p.endsWith('.zh.md') || p.endsWith('.zh.txt')) res.lang = 'zh'
   if (p.endsWith('.en.md') || p.endsWith('.en.txt')) res.lang = 'en'
   // module：优先 docs/<module>/ 或任意一级目录名作为猜测
@@ -125,9 +127,9 @@ export function enrichDocuments(docs: Document[], hint?: EnrichHint): Document[]
       ? (fm.tags as string[])
       : (fromPath.tags as string[] | undefined)
 
-    // 回写
+    // 回写（注意：使用 'language' 而非 'lang'，与 metadataSchema.ts 保持一致）
     if (moduleName) meta.module = moduleName
-    if (lang) meta.lang = lang
+    if (lang) meta.language = lang
     if (version) meta.version = version
     if (updatedAt) meta.updatedAt = updatedAt
     if (tags && tags.length) meta.tags = tags

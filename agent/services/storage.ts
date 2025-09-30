@@ -512,7 +512,7 @@ export async function upsertToChroma(
       uniqueDocs.push(doc)
     }
     if (dupCount > 0) {
-      logger.warn('[upsertToChroma] 本次批量写入去重', {
+      logger.info('[upsertToChroma] 本次批量写入去重', {
         dropped: dupCount,
         kept: uniqueDocs.length
       })
