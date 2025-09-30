@@ -1,20 +1,16 @@
 // agent/services/storage.ts
 /**
  * 文档说明：知识库文件与向量资源的底层持久化服务。
- * - 职责：
- *   1. 提供原始文件保存/列出/读取/删除能力。
- *   2. 提供向量集合（Chroma 集合）的注册、迁移和删除能力。
- * - 依赖：`agent/config/env.ts` 中的 KB_STORAGE_ROOT、KB_STORAGE_RAW_DIR 等目录配置；
- *   Chroma 客户端使用 LangChain.js v0.3 官方集成。
- */
-
-// agent/services/storage.ts
-/**
- * 文档说明：知识库文件与向量资源的底层持久化服务。
- * - 职责：
- *   1. 保存与管理原始上传文件。
- *   2. 将文档切块后写入 Chroma 向量数据库。
- * - 依赖：LangChain.js v0.3 官方集成；环境变量配置见 config/env.ts。
+ * 
+ * 职责：
+ *   1. 保存与管理原始上传文件（保存/列出/读取/删除）
+ *   2. 将文档切块后写入 Chroma 向量数据库
+ *   3. 提供向量集合的注册、迁移和删除能力
+ * 
+ * 依赖：
+ *   - LangChain.js v0.3 官方集成
+ *   - 环境变量配置见 `config/env.ts`（KB_STORAGE_ROOT、KB_STORAGE_RAW_DIR 等）
+ *   - Chroma 客户端使用 LangChain.js v0.3 官方集成
  */
 
 import * as crypto from 'node:crypto'

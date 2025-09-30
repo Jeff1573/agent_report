@@ -15,6 +15,7 @@ import { createCheckpointer, type PersistenceMode } from './persistence.js';
 import { CHECKPOINT_MODE, THREAD_ID_FALLBACK, RECURSION_LIMIT, TOOL_MAX_CALLS, TOOL_TIMEOUT_MS, TOOL_RETRY_ATTEMPTS } from '../config/env.js';
 import { defaultSummarizer } from '../stream/summarizers.js';
 import { getMCPTools, cleanupMCPClient, type MultiServerMCPClient } from '../tools/mcp.js';
+import type { AnyTool, ToolCallArgs, LLMResponse, ToolResult, GraphConfig, KBSearchResult, SourceReference } from './types.js';
 
 export interface RuntimeConfig {
   /** 自定义工具集（默认注册表） */
@@ -96,7 +97,7 @@ class SegmentAccumulator {
 
 /** 创建运行时实例 */
 export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<AgentRuntime> {
-  let tools: unknown[] = [];
+  let tools: AnyTool[] = [];
   let mcpClient: MultiServerMCPClient | undefined;
   let toolCallCount = 0; // 总工具调用计数器
 
@@ -110,10 +111,11 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
   }
 
   // 工具调用包装器 - 添加限制、超时和重试（适用于所有工具）
-  function wrapTool(tool: any) {
-    const originalCall = tool.call;
+  function wrapTool<T extends AnyTool>(tool: T): T {
+    const originalCall = tool.call.bind(tool);
 
-    tool.call = async (...args: any[]) => {
+    // 类型安全的包装
+    (tool as unknown as { call: (...args: unknown[]) => Promise<unknown> }).call = async (...args: unknown[]) => {
       // 1. 检查调用次数限制
       if (!checkToolCallLimit()) {
         throw new Error(`工具调用次数已达到限制 (${TOOL_MAX_CALLS})，无法执行更多工具调用`);
@@ -133,7 +135,7 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
       let lastError: Error | null = null;
       for (let attempt = 0; attempt <= TOOL_RETRY_ATTEMPTS; attempt++) {
         try {
-          const result = await Promise.race([originalCall.apply(tool, args), timeoutPromise]);
+          const result = await Promise.race([originalCall(...args), timeoutPromise]);
           logger.info(`工具调用成功: ${toolName} (尝试 ${attempt + 1})`);
           return result;
         } catch (error) {
