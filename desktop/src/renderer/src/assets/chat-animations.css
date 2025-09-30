@@ -62,17 +62,13 @@
 
 /* 按钮悬停效果 */
 .chat-button {
-  transition: all 0.2s ease;
+  /* transition: all 0.2s ease; */
 }
 
 .chat-button:hover {
-  transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-.chat-button:active {
-  transform: translateY(0);
-}
 
 /* 消息气泡入场动画 */
 .message-bubble {
@@ -332,7 +328,7 @@
   height: auto;
   min-height: 36px;
   padding: 0 16px;
-  transition: all 0.2s ease;
+  /* transition: all 0.2s ease; */
 }
 
 /* 鼠标触碰动效已移除 */
@@ -393,23 +389,22 @@
 }
 
 .history-session-item {
-  padding: 12px;
-  margin-bottom: 8px;
-  background: #ffffff;
-  border-radius: 8px;
-  border: 1px solid #e8e8e8;
-  cursor: pointer;
-  transition: all 0.2s;
+  padding: 12px !important;
+  margin-bottom: 8px !important;
+  background: #ffffff !important;
+  border-radius: 8px !important;
+  border: 1px solid #e8e8e8 !important;
+  cursor: pointer !important;
 }
 
 .history-session-item.current {
-  background: #f0f5ff;
-  border: 2px solid #667eea;
+  background: #f0f5ff !important;
+  border: 2px solid #667eea !important;
 }
 
 .history-session-item:hover:not(.current) {
-  background: #fafafa;
-  border-color: #d9d9d9;
+  background: #fafafa !important;
+  border-color: #d9d9d9 !important;
 }
 
 .history-session-content {
@@ -417,64 +412,64 @@
 }
 
 .history-session-header {
-  margin-bottom: 8px;
-  padding: 0 12px;
+  margin-bottom: 8px !important;
+  padding: 0 12px !important;
 }
 
 .history-session-title-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
 }
 
 .history-session-title {
-  font-size: 14px;
-  font-weight: 500;
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  display: inline-block;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  max-width: 220px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  display: inline-block !important;
 }
 
 .history-session-title.current {
-  color: #667eea;
+  color: #667eea !important;
 }
 
 .history-session-title:not(.current) {
-  color: #000;
+  color: #000 !important;
 }
 
 .history-session-current-tag {
-  margin: 0;
-  font-size: 10px;
+  margin: 0 !important;
+  font-size: 10px !important;
 }
 
 .history-session-meta {
-  margin-top: 6px;
-  padding: 0 12px;
+  margin-top: 6px !important;
+  padding: 0 12px !important;
 }
 
 .history-session-info {
-  font-size: 11px;
-  color: #999;
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  font-size: 11px !important;
+  color: #999 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
 }
 
 .history-session-info-item {
-  display: flex;
-  align-items: center;
+  display: flex !important;
+  align-items: center !important;
 }
 
 .history-session-info-icon {
-  margin-right: 4px;
+  margin-right: 4px !important;
 }
 
 .history-session-actions {
-  text-align: right;
-  padding: 0 12px;
+  text-align: right !important;
+  padding: 0 12px !important;
 }
 
 .history-session-delete-btn {
