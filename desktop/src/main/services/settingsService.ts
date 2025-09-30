@@ -39,7 +39,7 @@ function ensureSettings(): AppSettings {
     const raw = fs.readFileSync(file, 'utf-8')
     const json = JSON.parse(raw) as AppSettings
     if (!Array.isArray(json.modelConfigs)) json.modelConfigs = []
-    if (!('vectorDbConfigs' in json)) (json as any).vectorDbConfigs = []
+    if (!('vectorDbConfigs' in json)) json.vectorDbConfigs = []
     return json
   } catch {
     const fallback: AppSettings = { modelConfigs: [], vectorDbConfigs: [] }
