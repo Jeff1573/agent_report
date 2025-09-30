@@ -1,5 +1,5 @@
 appId: com.mindforge.desktop
-productName: mindForge Desktop
+productName: MindForge Agent
 directories:
   buildResources: build
 files:

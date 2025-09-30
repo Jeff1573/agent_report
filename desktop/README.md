@@ -1,4 +1,4 @@
-## mindForge Desktop（Electron + React 18 + TypeScript + antd）
+## MindForge Agent（Electron + React 18 + TypeScript + antd）
 
 本项目提供基于 Electron（electron-vite）+ React 18 + TypeScript + antd 的桌面端脚手架，支持 Windows 打包（NSIS）。
 
@@ -46,7 +46,7 @@
 
 - 配置文件：`electron-builder.yml`
   - `appId: com.mindforge.desktop`
-  - `productName: mindForge Desktop`
+  - `productName: MindForge Agent`
   - `win.target: nsis`
   - `nsis.artifactName: ${productName}-${version}-setup.${ext}`
 - 生成安装包：`npm run build:win`

@@ -1,7 +1,7 @@
 {
-  "name": "electron-app",
+  "name": "mindforge-agent",
   "version": "1.0.0",
-  "description": "Electron + React 18 + TypeScript 应用（基于 electron-vite）",
+  "description": "MindForge Agent - Electron + React 18 + TypeScript 应用（基于 electron-vite）",
   "main": "./out/main/index.js",
   "author": "example.com",
   "homepage": "https://electron-vite.org",
