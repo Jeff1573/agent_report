@@ -24,24 +24,25 @@ npm install
 在项目**根目录**创建 `.env` 文件：
 
 ```bash
-# 必需配置
+# 必需（最小可运行）
 OPENAI_API_KEY=sk-xxxxx
 OPENAI_MODEL=gpt-4
 OPENAI_BASE_URL=https://api.openai.com/v1
 
-# ChromaDB 向量数据库
+# 可选：启用内部检索（RAG）需全部就绪
 CHROMA_URL=http://localhost:8000
 KB_COLLECTION=mindforge_kb
-
-# 嵌入模型
 KB_EMBED_PROVIDER=openai
-KB_EMBED_MODEL=text-embedding-3-small
+KB_EMBED_MODEL=text-embedding-3-small   # openai 模式需要
+# 或者使用 Gemini 嵌入：
+# KB_EMBED_PROVIDER=gemini
+# GOOGLE_API_KEY=xxxx                   # gemini 模式需要
 
-# 可选：搜索工具
+# 可选：外部搜索工具
 TAVILY_API_KEY=tvly-xxxxx
 ```
 
-### 步骤 3: 启动 ChromaDB
+### 步骤 3: （可选）启动 ChromaDB（启用 RAG 时）
 
 选择以下任一方式：
 
@@ -80,6 +81,7 @@ npm run precheck
 ✓ 所有必需项检查通过！
 可以运行: npm run dev
 ```
+未配置 RAG 时会看到提示：“禁用内部检索（kb_search）”，不影响启动与聊天功能。
 
 ### 步骤 6: 启动应用
 

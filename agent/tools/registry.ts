@@ -9,6 +9,7 @@ import { tavilyTool, makeTavily } from './tavily.js';
 import { kbSearchTool } from './kb.js';
 import { getMCPTools } from './mcp.js';
 import { logger } from '../utils/logger.js';
+import { RAG_ENABLED } from '../config/env.js';
 
 /** 工具类型占位（LangChain Tool 接口为结构化对象，避免引入不必要耦合） */
 export type AnyTool = unknown;
@@ -37,14 +38,18 @@ export async function getDefaultTools(): Promise<AnyTool[]> {
   const tools: AnyTool[] = [];
   const loadErrors: Array<{ tool: string; error: string; strategy: ToolLoadStrategy }> = [];
 
-  // 1. 内部知识库检索（核心工具，优先级最高）
-  try {
-    tools.push(kbSearchTool);
-    logger.info('Loaded kb_search tool');
-  } catch (error) {
-    const errorMsg = `kb_search: ${error}`;
-    loadErrors.push({ tool: 'kb_search', error: errorMsg, strategy: ToolLoadStrategy.CORE });
-    logger.warn(`[Core Tool] ${errorMsg}`);
+  // 1. 内部知识库检索（可选：仅当 RAG 可用时注册）
+  if (RAG_ENABLED) {
+    try {
+      tools.push(kbSearchTool);
+      logger.info('Loaded kb_search tool (RAG enabled)');
+    } catch (error) {
+      const errorMsg = `kb_search: ${error}`;
+      loadErrors.push({ tool: 'kb_search', error: errorMsg, strategy: ToolLoadStrategy.OPTIONAL });
+      logger.warn(`[Optional Tool] ${errorMsg}`);
+    }
+  } else {
+    logger.info('RAG not configured; skip registering kb_search tool');
   }
 
   // 2. 外部搜索工具（可选工具，兜底）

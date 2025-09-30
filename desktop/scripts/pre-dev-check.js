@@ -77,36 +77,34 @@ function checkEnvVar(varName, description) {
 function checkChromaDB(url) {
   return new Promise((resolve) => {
     const parsedUrl = new URL(url)
-    const options = {
-      hostname: parsedUrl.hostname,
-      port: parsedUrl.port || 8000,
-      path: '/api/v1/heartbeat',
-      method: 'GET',
-      timeout: 3000
-    }
+    const hostname = parsedUrl.hostname
+    const port = parsedUrl.port || 8000
+    const basePath = (parsedUrl.pathname || '/').replace(/\/+$/, '') || '/'
+    const path = `${basePath}/api/v2/heartbeat`.replace(/\/+$/, '')
 
+    const options = { hostname, port, path, method: 'GET', timeout: 3000 }
     const req = http.request(options, (res) => {
+      const tested = `${parsedUrl.protocol}//${parsedUrl.host}${path}`
       if (res.statusCode === 200) {
-        log(`✓ ChromaDB 连接成功 (${url})`, 'green')
+        log(`✓ ChromaDB 连接成功 (${tested})`, 'green')
         resolve(true)
       } else {
-        log(`✗ ChromaDB 返回状态码 ${res.statusCode}`, 'yellow')
+        log(`✗ ChromaDB 返回状态码 ${res.statusCode} (${tested})`, 'yellow')
         resolve(false)
       }
     })
-
     req.on('error', () => {
-      log(`✗ ChromaDB 无法连接 (${url})`, 'yellow')
-      log(`  提示: 请启动 ChromaDB 服务`, 'blue')
+      const tested = `${parsedUrl.protocol}//${parsedUrl.host}${path}`
+      log(`✗ ChromaDB 无法连接 (${tested})`, 'yellow')
+      log(`  提示: 请启动 ChromaDB 服务或检查 CHROMA_URL`, 'blue')
       resolve(false)
     })
-
     req.on('timeout', () => {
       req.destroy()
-      log(`✗ ChromaDB 连接超时`, 'yellow')
+      const tested = `${parsedUrl.protocol}//${parsedUrl.host}${path}`
+      log(`✗ ChromaDB 连接超时 (${tested})`, 'yellow')
       resolve(false)
     })
-
     req.end()
   })
 }
@@ -136,10 +134,14 @@ async function main() {
     log(`  找到配置文件: ${path.relative(path.resolve(__dirname, '../..'), envPath)}`, 'blue')
     allPassed &= checkEnvVar('OPENAI_API_KEY', 'OPENAI_API_KEY 已配置')
     allPassed &= checkEnvVar('OPENAI_MODEL', 'OPENAI_MODEL 已配置')
-    allPassed &= checkEnvVar('CHROMA_URL', 'CHROMA_URL 已配置')
-    allPassed &= checkEnvVar('KB_COLLECTION', 'KB_COLLECTION 已配置')
-    checkEnvVar('KB_EMBED_MODEL', 'KB_EMBED_MODEL 已配置 (可选)')
+    // RAG 配置改为可选：仅提示，不影响总体通过
+    const chromaOk = checkEnvVar('CHROMA_URL', 'CHROMA_URL 已配置 (RAG 可选)')
+    const collOk = checkEnvVar('KB_COLLECTION', 'KB_COLLECTION 已配置 (RAG 可选)')
+    checkEnvVar('KB_EMBED_MODEL', 'KB_EMBED_MODEL 已配置 (RAG 可选, openai 模式)')
     checkEnvVar('TAVILY_API_KEY', 'TAVILY_API_KEY 已配置 (可选)')
+    if (!(chromaOk && collOk)) {
+      log('  说明: 未配置向量库，将禁用内部检索（kb_search）功能', 'yellow')
+    }
   } else {
     log('✗ 未找到 .env 文件（已检查根目录和 agent/ 目录）', 'red')
     log('  建议: 在项目根目录创建 .env 文件', 'yellow')
