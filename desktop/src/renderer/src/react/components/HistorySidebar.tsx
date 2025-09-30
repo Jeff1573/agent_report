@@ -8,7 +8,7 @@
  */
 
 import React, { useState, useEffect } from 'react'
-import { Drawer, List, Button, Space, Typography, Tag, Empty, Popconfirm, message } from 'antd'
+import { Drawer, List, Button, Space, Typography, Tag, Empty, Popconfirm, message, Divider } from 'antd'
 import { HistoryOutlined, DeleteOutlined, MessageOutlined, ClockCircleOutlined } from '@ant-design/icons'
 import type { SessionData } from '../../../../shared/ipc'
 
@@ -56,6 +56,18 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = ({
     }
   }
 
+  // 清空会话（保留当前）
+  const handleClearAllExceptCurrent: () => Promise<void> = async () => {
+    try {
+      const deleted = await window.api.history.clear(currentSessionId)
+      message.success(`已清空历史，共删除 ${deleted} 个会话`)
+      loadSessions()
+    } catch (error) {
+      console.error('[HistorySidebar] 清空历史失败:', error)
+      message.error('清空历史失败')
+    }
+  }
+
   // 加载会话
   const handleLoadSession: (session: SessionData) => void = (session: SessionData) => {
     onLoadSession(session)
@@ -73,10 +85,22 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = ({
   return (
     <Drawer
       title={
-        <Space>
-          <HistoryOutlined style={{ color: '#667eea' }} />
-          <span>历史对话</span>
-        </Space>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Space>
+            <HistoryOutlined style={{ color: '#667eea' }} />
+            <span>历史对话</span>
+          </Space>
+          <Popconfirm
+            title="清空历史"
+            description="将删除除当前会话外的所有历史记录，确认执行？"
+            onConfirm={handleClearAllExceptCurrent}
+            okText="确定"
+            cancelText="取消"
+            okButtonProps={{ danger: true }}
+          >
+            <Button type="text" danger size="small">清空历史</Button>
+          </Popconfirm>
+        </div>
       }
       placement="left"
       open={visible}
@@ -163,6 +187,7 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = ({
                         icon={<DeleteOutlined />}
                         className="history-session-delete-btn"
                         onClick={(e) => e.stopPropagation()}
+                        disabled={isCurrent}
                       >
                         删除
                       </Button>

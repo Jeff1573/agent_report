@@ -99,6 +99,10 @@ app.whenReady().then(() => {
     await historyService.deleteSession(sessionId)
   })
 
+  ipcMain.handle(IPC_CHANNELS.HISTORY_CLEAR, async (_event, excludeSessionId?: string) => {
+    return historyService.clearSessions(excludeSessionId)
+  })
+
   createWindow()
 
   // 在不阻塞 UI 的情况下预热 Agent Runtime（懒加载提前完成）

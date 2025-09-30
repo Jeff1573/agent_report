@@ -116,6 +116,38 @@ export async function deleteSession(sessionId: string): Promise<void> {
 }
 
 /**
+ * 清空历史会话，可选排除某个会话（通常为当前会话）
+ * @param excludeSessionId 需要保留的会话ID
+ * @returns 实际删除的数量
+ */
+export async function clearSessions(excludeSessionId?: string): Promise<number> {
+  try {
+    ensureHistoryDir()
+    const files = fs.readdirSync(HISTORY_DIR)
+    let deleted = 0
+    for (const file of files) {
+      if (!file.endsWith('.json')) continue
+      const filePath = path.join(HISTORY_DIR, file)
+      if (excludeSessionId) {
+        const expected = `${excludeSessionId}.json`
+        if (file === expected) continue
+      }
+      try {
+        fs.unlinkSync(filePath)
+        deleted++
+      } catch (err) {
+        console.error('[HistoryService] 清空时删除失败:', file, err)
+      }
+    }
+    console.log('[HistoryService] 清空历史完成，删除数量:', deleted)
+    return deleted
+  } catch (error) {
+    console.error('[HistoryService] 清空历史失败:', error)
+    return 0
+  }
+}
+
+/**
  * 清理旧会话（可选功能）
  * @param days 保留最近多少天的会话
  */

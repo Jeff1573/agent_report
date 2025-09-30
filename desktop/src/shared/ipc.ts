@@ -14,7 +14,8 @@ export const IPC_CHANNELS = {
   HISTORY_SAVE: 'history/save',
   HISTORY_LOAD: 'history/load',
   HISTORY_LIST: 'history/list',
-  HISTORY_DELETE: 'history/delete'
+  HISTORY_DELETE: 'history/delete',
+  HISTORY_CLEAR: 'history/clear'
 } as const
 
 /** 流式事件类型 */
@@ -94,6 +95,8 @@ export interface PreloadApi {
     list: () => Promise<SessionData[]>
     /** 删除会话 */
     delete: (sessionId: string) => Promise<void>
+    /** 清空历史（可排除当前会话） */
+    clear: (excludeSessionId?: string) => Promise<number>
   }
 }
 

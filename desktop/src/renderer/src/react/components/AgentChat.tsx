@@ -59,6 +59,7 @@ export const AgentChat: React.FC = () => {
         if (sessions.length > 0) {
           const lastSession = sessions[0] // 最近的会话
           setMessages(lastSession.messages)
+          setSessionId(lastSession.id)
           console.log('[AgentChat] 已加载会话:', lastSession.title)
         }
       } catch (error) {
@@ -129,23 +130,23 @@ export const AgentChat: React.FC = () => {
     }
   }
 
-  const handleStreamEvent: (streamEvent: AgentStreamEvent) => void = (streamEvent: AgentStreamEvent) => {
-    switch (streamEvent.type) {
+  const handleStreamEvent = (evt: AgentStreamEvent): void => {
+    switch (evt.type) {
       case 'model-token':
-        if (streamEvent.token) {
-          setCurrentContent(prev => prev + streamEvent.token)
+        if (evt.token) {
+          setCurrentContent(prev => prev + evt.token)
         }
         break
 
       case 'assistant-message':
-        if (streamEvent.content) {
-          setCurrentContent(streamEvent.content)
+        if (evt.content) {
+          setCurrentContent(evt.content)
         }
         break
 
       case 'tool-call':
-        if (streamEvent.name) {
-          setCurrentToolCalls(prev => [...prev, { name: streamEvent.name!, args: streamEvent.args }])
+        if (evt.name) {
+          setCurrentToolCalls(prev => [...prev, { name: evt.name!, args: evt.args }])
         }
         break
 
@@ -171,8 +172,8 @@ export const AgentChat: React.FC = () => {
         break
 
       case 'error':
-        console.error('Stream error:', streamEvent.error)
-        antMessage.error(`错误: ${streamEvent.error}`)
+        console.error('Stream error:', evt.error)
+        antMessage.error(`错误: ${String(evt.error)}`)
         break
     }
   }
@@ -223,22 +224,19 @@ export const AgentChat: React.FC = () => {
     })
   }
 
-  const handleLoadSession: (sessionData: SessionData) => void = (sessionData: SessionData) => {
-    setMessages(sessionData.messages)
-    setSessionId(sessionData.id)
+  const handleLoadSession = (data: SessionData): void => {
+    setMessages(data.messages)
+    setSessionId(data.id)
     setInput('')
     setCurrentContent('')
     setCurrentToolCalls([])
   }
 
-  const renderMessage: (message: Message) => JSX.Element = (message: Message) => {
-    const isUser = message.role === 'user'
+  const renderMessage = (msg: Message): JSX.Element => {
+    const isUser = msg.role === 'user'
 
     return (
-      <div
-        key={message.id}
-        className={`message-wrapper ${isUser ? 'user' : 'assistant'}`}
-      >
+      <div key={msg.id} className={`message-wrapper ${isUser ? 'user' : 'assistant'}`}>
         <div
           className={`message-bubble ${isUser ? 'user' : 'assistant'}`}
         >
@@ -250,7 +248,7 @@ export const AgentChat: React.FC = () => {
               {isUser ? '你' : 'MindForge'}
             </Text>
             <Text className={`message-timestamp ${isUser ? 'user' : 'assistant'}`}>
-              {new Date(message.timestamp).toLocaleTimeString('zh-CN', {
+              {new Date(msg.timestamp).toLocaleTimeString('zh-CN', {
                 hour: '2-digit',
                 minute: '2-digit'
               })}
@@ -259,17 +257,17 @@ export const AgentChat: React.FC = () => {
 
           <div className={`message-content ${isUser ? 'user' : 'assistant'}`}>
             {isUser ? (
-              <div>{message.content}</div>
+              <div>{msg.content}</div>
             ) : (
-              <MarkdownMessage content={message.content} />
+              <MarkdownMessage content={msg.content} />
             )}
           </div>
 
           {/* 工具调用标签 */}
-          {message.toolCalls && message.toolCalls.length > 0 && (
+          {msg.toolCalls && msg.toolCalls.length > 0 && (
             <div className="tool-calls-container">
               <Space wrap size={[4, 4]}>
-                {message.toolCalls.map((call, idx) => (
+                {msg.toolCalls.map((call, idx) => (
                   <Tag
                     key={idx}
                     icon={<ToolOutlined />}
