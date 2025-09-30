@@ -160,16 +160,16 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
   try {
     // 检查是否提供了自定义工具
     if (Array.isArray(config.tools) && config.tools.length > 0) {
-      tools = config.tools;
+      tools = config.tools as AnyTool[];
     } else {
       // 加载非MCP工具
-      tools = await getDefaultTools();
+      tools = await getDefaultTools() as AnyTool[];
 
       // 尝试加载MCP工具
       try {
         const mcpResult = await getMCPTools();
         // 为每个MCP工具应用调用限制包装器
-        const wrappedMCPTools = mcpResult.tools.map(wrapTool);
+        const wrappedMCPTools = mcpResult.tools.map(wrapTool as any) as AnyTool[];
         tools.push(...wrappedMCPTools);
         mcpClient = mcpResult.client;
         logger.info(`Loaded ${wrappedMCPTools.length} MCP tools with call limits (${TOOL_MAX_CALLS} max total calls)`);
