@@ -93,7 +93,20 @@ function parseCli(argv: string[]) {
 async function main() {
   const { mode, summary, printSources, threadId: cliThreadId = 'test-thread-001', input } = parseCli(process.argv.slice(2));
   const stdinText = input ? '' : await readStdin();
-  const query = (input || stdinText || '根据资料，查询角色定位是什么？').trim();
+  
+  // 获取查询内容：命令行参数 > stdin > 环境变量 > 提示用户
+  const defaultQuery = process.env.DEFAULT_QUERY || '';
+  const query = (input || stdinText || defaultQuery).trim();
+  
+  if (!query) {
+    console.error('错误: 未提供查询内容');
+    console.error('');
+    console.error('使用方法:');
+    console.error('  npm start -w agent -- --input "你的问题"');
+    console.error('  echo "你的问题" | npm start -w agent');
+    console.error('  或设置环境变量: DEFAULT_QUERY="你的问题"');
+    process.exit(1);
+  }
   const runtime = await createAgentRuntime();
   const threadId = (cliThreadId && cliThreadId.trim()) || (THREAD_ID_FALLBACK && THREAD_ID_FALLBACK.trim()) || undefined;
 

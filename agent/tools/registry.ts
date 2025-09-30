@@ -14,40 +14,60 @@ import { logger } from '../utils/logger.js';
 export type AnyTool = unknown;
 
 /**
+ * 工具加载策略枚举
+ */
+enum ToolLoadStrategy {
+  /** 核心工具：加载失败时警告，但不阻止系统启动 */
+  CORE = 'core',
+  /** 可选工具：加载失败时警告 */
+  OPTIONAL = 'optional'
+}
+
+/**
  * 返回默认工具集合（按优先级排序）。
+ * 
+ * 工具加载策略：
+ * - 所有工具加载失败都记录警告，不阻止系统启动
+ * - 如果所有工具都加载失败，返回空数组（Agent 将无工具可用）
+ * - 配置错误应在 validateConfig() 中提前检查
+ * 
  * 优先级：内部知识库 > 外部搜索（不包含MCP工具，MCP工具由运行时单独管理）
  */
 export async function getDefaultTools(): Promise<AnyTool[]> {
   const tools: AnyTool[] = [];
-  const errors: string[] = [];
+  const loadErrors: Array<{ tool: string; error: string; strategy: ToolLoadStrategy }> = [];
 
-  // 1. 内部知识库检索（最高优先级）
+  // 1. 内部知识库检索（核心工具，优先级最高）
   try {
     tools.push(kbSearchTool);
     logger.info('Loaded kb_search tool');
   } catch (error) {
     const errorMsg = `kb_search: ${error}`;
-    errors.push(errorMsg);
-    logger.error(errorMsg);
-    // 内部知识库失败时应该抛出错误，因为这是核心功能
-    throw new Error(`Failed to load core kb_search tool: ${error}`);
+    loadErrors.push({ tool: 'kb_search', error: errorMsg, strategy: ToolLoadStrategy.CORE });
+    logger.warn(`[Core Tool] ${errorMsg}`);
   }
 
-  // 2. 外部搜索工具（兜底）
+  // 2. 外部搜索工具（可选工具，兜底）
   try {
     tools.push(tavilyTool);
     logger.info('Loaded tavily tool');
   } catch (error) {
     const errorMsg = `tavily: ${error}`;
-    errors.push(errorMsg);
-    logger.warn(errorMsg); // 外部工具失败也不应该阻止系统启动
+    loadErrors.push({ tool: 'tavily', error: errorMsg, strategy: ToolLoadStrategy.OPTIONAL });
+    logger.warn(`[Optional Tool] ${errorMsg}`);
   }
 
-  if (errors.length > 0) {
-    logger.warn('Some tools failed to load:', errors);
+  // 汇总加载结果
+  if (loadErrors.length > 0) {
+    const coreErrors = loadErrors.filter(e => e.strategy === ToolLoadStrategy.CORE);
+    if (coreErrors.length > 0) {
+      logger.warn('核心工具加载失败，系统功能可能受限:', coreErrors.map(e => e.tool));
+    }
+    logger.info(`工具加载完成: 成功 ${tools.length}/${tools.length + loadErrors.length}`);
+  } else {
+    logger.info(`Total tools loaded: ${tools.length}`);
   }
 
-  logger.info(`Total tools loaded: ${tools.length}`);
   return tools;
 }
 
