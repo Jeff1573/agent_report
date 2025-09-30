@@ -79,12 +79,16 @@ function checkChromaDB(url) {
     const parsedUrl = new URL(url)
     const hostname = parsedUrl.hostname
     const port = parsedUrl.port || 8000
-    const basePath = (parsedUrl.pathname || '/').replace(/\/+$/, '') || '/'
-    const path = `${basePath}/api/v2/heartbeat`.replace(/\/+$/, '')
+    // 规范化 base 路径，确保不会出现重复斜杠，且始终以单个 / 开头
+    const base = (parsedUrl.pathname || '')
+      .replace(/\/+$/,'')   // 去除结尾斜杠
+      .replace(/^\/+/, '')  // 去除开头多余斜杠
+    // Chroma OSS REST 心跳路径为 v1 版本
+    const urlPath = `/${base ? base + '/' : ''}api/v2/heartbeat`
 
-    const options = { hostname, port, path, method: 'GET', timeout: 3000 }
+    const options = { hostname, port, path: urlPath, method: 'GET', timeout: 3000 }
     const req = http.request(options, (res) => {
-      const tested = `${parsedUrl.protocol}//${parsedUrl.host}${path}`
+      const tested = `${parsedUrl.protocol}//${parsedUrl.host}${urlPath}`
       if (res.statusCode === 200) {
         log(`✓ ChromaDB 连接成功 (${tested})`, 'green')
         resolve(true)
@@ -94,14 +98,14 @@ function checkChromaDB(url) {
       }
     })
     req.on('error', () => {
-      const tested = `${parsedUrl.protocol}//${parsedUrl.host}${path}`
+      const tested = `${parsedUrl.protocol}//${parsedUrl.host}${urlPath}`
       log(`✗ ChromaDB 无法连接 (${tested})`, 'yellow')
       log(`  提示: 请启动 ChromaDB 服务或检查 CHROMA_URL`, 'blue')
       resolve(false)
     })
     req.on('timeout', () => {
       req.destroy()
-      const tested = `${parsedUrl.protocol}//${parsedUrl.host}${path}`
+      const tested = `${parsedUrl.protocol}//${parsedUrl.host}${urlPath}`
       log(`✗ ChromaDB 连接超时 (${tested})`, 'yellow')
       resolve(false)
     })
