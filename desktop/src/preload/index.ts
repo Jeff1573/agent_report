@@ -34,6 +34,15 @@ const api: PreloadApi = {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.HISTORY_LIST),
     delete: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.HISTORY_DELETE, sessionId),
     clear: (excludeSessionId) => ipcRenderer.invoke(IPC_CHANNELS.HISTORY_CLEAR, excludeSessionId)
+  },
+  settings: {
+    modelList: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_MODEL_LIST),
+    getActiveModel: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_MODEL_GET_ACTIVE),
+    setActiveModel: (id) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_MODEL_SET_ACTIVE, id),
+    upsertModel: (config) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_MODEL_UPSERT, config),
+    deleteModel: (id) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_MODEL_DELETE, id),
+    exportSettings: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_EXPORT),
+    importSettings: (json) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_IMPORT, json)
   }
 }
 

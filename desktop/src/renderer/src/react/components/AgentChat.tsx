@@ -8,12 +8,14 @@
  */
 
 import React, { useState, useRef, useEffect, JSX } from 'react'
-import { Input, Button, Card, Space, Typography, Tag, Spin, message as antMessage, Tooltip, Modal } from 'antd'
-import { SendOutlined, StopOutlined, RobotOutlined, UserOutlined, ToolOutlined, PlusOutlined, DeleteOutlined, HistoryOutlined } from '@ant-design/icons'
+import { Input, Button, Card, Space, Typography, Tag, Spin, message as antMessage, Tooltip, Modal, Select } from 'antd'
+import { SendOutlined, StopOutlined, RobotOutlined, UserOutlined, ToolOutlined, PlusOutlined, DeleteOutlined, HistoryOutlined, SettingOutlined } from '@ant-design/icons'
 import type { AgentStreamEvent, SessionData } from '../../../../shared/ipc'
 import { MarkdownMessage } from './MarkdownMessage'
 import { HistorySidebar } from './HistorySidebar'
 import '../../assets/chat-animations.css'
+import { useNavigate } from 'react-router-dom'
+import type { ModelConfig } from '../../../../shared/ipc'
 
 const { TextArea } = Input
 const { Text } = Typography
@@ -37,6 +39,7 @@ function generateSessionTitle(messages: Message[]): string {
 }
 
 export const AgentChat: React.FC = () => {
+  const navigate = useNavigate()
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -44,6 +47,8 @@ export const AgentChat: React.FC = () => {
   const [currentToolCalls, setCurrentToolCalls] = useState<Array<{ name: string; args: unknown }>>([])
   const [sessionId, setSessionId] = useState(() => `session-${Date.now()}`)
   const [historyVisible, setHistoryVisible] = useState(false)
+  const [modelList, setModelList] = useState<ModelConfig[]>([])
+  const [activeModelId, setActiveModelId] = useState<string | undefined>(undefined)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // 自动滚动到底部
@@ -66,7 +71,18 @@ export const AgentChat: React.FC = () => {
         console.error('[AgentChat] 加载会话失败:', error)
       }
     }
+    const loadModels: () => Promise<void> = async () => {
+      try {
+        const list = await window.api.settings.modelList()
+        const active = await window.api.settings.getActiveModel()
+        setModelList(list)
+        setActiveModelId(active?.id)
+      } catch (err) {
+        console.warn('加载模型配置失败', err)
+      }
+    }
     loadLastSession()
+    loadModels()
   }, [])
 
   // 消息变化时自动保存
@@ -119,7 +135,8 @@ export const AgentChat: React.FC = () => {
         },
         { 
           summary: false,
-          threadId: 'default-thread'
+          threadId: 'default-thread',
+          modelConfigId: activeModelId
         }
       )
     } catch (error) {
@@ -304,6 +321,29 @@ export const AgentChat: React.FC = () => {
                 <span className="card-title-text">MindForge Agent</span>
               </div>
               <div className="card-title-actions">
+                <Select
+                  size="small"
+                  value={activeModelId}
+                  placeholder="选择模型配置"
+                  onChange={async (v) => {
+                    try {
+                      await window.api.settings.setActiveModel(v)
+                      setActiveModelId(v)
+                    } catch (e) {
+                      antMessage.error('切换失败')
+                    }
+                  }}
+                  style={{ width: 220, marginRight: 8 }}
+                  options={modelList.map(m => ({ label: `${m.name} (${m.model})`, value: m.id }))}
+                />
+                <Tooltip title="设置">
+                  <Button
+                    icon={<SettingOutlined />}
+                    onClick={() => navigate('/settings')}
+                    type="text"
+                    size="small"
+                  />
+                </Tooltip>
                 <Tooltip title="历史对话">
                   <Button
                     icon={<HistoryOutlined />}

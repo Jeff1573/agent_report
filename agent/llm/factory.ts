@@ -20,17 +20,26 @@ export type ChatModelOverrides = Partial<{
   streaming: boolean
   streamUsage: boolean
   baseURL: string
+  /** 优先级最高：显式 Bearer API Key（覆盖环境变量） */
+  apiKey: string
 }>
 
 /** 统一创建 ChatOpenAI（OpenAI 协议兼容） */
 export function makeChatModel(overrides: ChatOpenAIFields & ChatModelOverrides = {}) {
   // 1) 处理鉴权：优先自定义头；否则走标准 Bearer（OPENAI_API_KEY）
-  const defaultHeaders =
-    CUSTOM_AUTH_HEADER && CUSTOM_AUTH_VALUE
-      ? { [CUSTOM_AUTH_HEADER]: CUSTOM_AUTH_VALUE }
-      : OPENAI_API_KEY
-        ? { Authorization: `Bearer ${OPENAI_API_KEY}` }
-        : {}
+  const defaultHeaders = (() => {
+    // 覆盖优先：显式传入 apiKey
+    if (typeof (overrides as any).apiKey === 'string' && (overrides as any).apiKey.trim().length > 0) {
+      return { Authorization: `Bearer ${(overrides as any).apiKey}` }
+    }
+    if (CUSTOM_AUTH_HEADER && CUSTOM_AUTH_VALUE) {
+      return { [CUSTOM_AUTH_HEADER]: CUSTOM_AUTH_VALUE }
+    }
+    if (OPENAI_API_KEY) {
+      return { Authorization: `Bearer ${OPENAI_API_KEY}` }
+    }
+    return {}
+  })()
 
   // 2) 实例化模型（可随时替换 baseURL / model）
   const llm = new ChatOpenAI({

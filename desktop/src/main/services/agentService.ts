@@ -9,6 +9,7 @@
  */
 
 import type { AgentStreamEvent, AgentChatOptions } from '../../shared/ipc'
+import * as settingsService from './settingsService'
 
 /** Agent Runtime 接口（避免直接导入导致打包问题） */
 type AgentRuntime = {
@@ -152,6 +153,11 @@ export async function chatStream(
     const streamOptions = {
       summary: options?.summary ?? false,
       threadId: options?.threadId
+    }
+
+    // 将模型配置选择传递给运行时（通过全局可变上下文或单例存储覆盖）
+    if (options?.modelConfigId) {
+      await settingsService.setActiveModelConfig(options.modelConfigId)
     }
 
     // 使用 events 模式（更适合流式 UI）

@@ -3,6 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { IPC_CHANNELS } from '../shared/ipc'
+import * as settingsService from './services/settingsService'
 import * as agentService from './services/agentService'
 import * as historyService from './services/historyService'
 
@@ -103,10 +104,39 @@ app.whenReady().then(() => {
     return historyService.clearSessions(excludeSessionId)
   })
 
+  // IPC 白名单：设置（模型配置）相关
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_MODEL_LIST, async () => {
+    return settingsService.listModelConfigs()
+  })
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_MODEL_GET_ACTIVE, async () => {
+    return settingsService.getActiveModelConfig()
+  })
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_MODEL_SET_ACTIVE, async (_event, id: string) => {
+    await settingsService.setActiveModelConfig(id)
+  })
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_MODEL_UPSERT, async (_event, config) => {
+    await settingsService.upsertModelConfig(config)
+  })
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_MODEL_DELETE, async (_event, id: string) => {
+    await settingsService.deleteModelConfig(id)
+  })
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_EXPORT, async () => {
+    return settingsService.exportSettings()
+  })
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_IMPORT, async (_event, json: string) => {
+    await settingsService.importSettings(json)
+  })
+
   createWindow()
 
   // 在不阻塞 UI 的情况下预热 Agent Runtime（懒加载提前完成）
   setTimeout(() => {
+    // 将用户数据目录暴露给 agent 侧（供 settings-bridge 读取）
+    try {
+      process.env.MF_USER_DATA_DIR = app.getPath('userData')
+    } catch (e) {
+      console.warn('[AgentService] 无法设置 MF_USER_DATA_DIR', e)
+    }
     agentService.warmup().catch(err => console.warn('[AgentService] warmup failed', err))
   }, 0)
 

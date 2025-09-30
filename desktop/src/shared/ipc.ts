@@ -15,7 +15,15 @@ export const IPC_CHANNELS = {
   HISTORY_LOAD: 'history/load',
   HISTORY_LIST: 'history/list',
   HISTORY_DELETE: 'history/delete',
-  HISTORY_CLEAR: 'history/clear'
+  HISTORY_CLEAR: 'history/clear',
+  // 设置（模型配置）相关
+  SETTINGS_MODEL_LIST: 'settings/model/list',
+  SETTINGS_MODEL_GET_ACTIVE: 'settings/model/getActive',
+  SETTINGS_MODEL_SET_ACTIVE: 'settings/model/setActive',
+  SETTINGS_MODEL_UPSERT: 'settings/model/upsert',
+  SETTINGS_MODEL_DELETE: 'settings/model/delete',
+  SETTINGS_EXPORT: 'settings/export',
+  SETTINGS_IMPORT: 'settings/import'
 } as const
 
 /** 流式事件类型 */
@@ -48,6 +56,8 @@ export interface AgentChatOptions {
   threadId?: string
   /** 是否使用流式模式 */
   stream?: boolean
+  /** 使用的模型配置ID（前端选择后传递给主进程） */
+  modelConfigId?: string
 }
 
 /** 聊天消息 */
@@ -66,6 +76,27 @@ export interface SessionData {
   messages: ChatMessage[]
   createdAt: number
   updatedAt: number
+}
+
+/** 模型配置（Bearer 鉴权，后续可扩展自定义 Header） */
+export interface ModelConfig {
+  id: string
+  name: string
+  model: string
+  baseURL?: string
+  apiKey?: string
+  temperature?: number
+  timeout?: number
+  maxRetries?: number
+  streaming?: boolean
+  updatedAt: number
+}
+
+/** 设置文件结构（预留向量数据库配置） */
+export interface AppSettings {
+  modelConfigs: ModelConfig[]
+  activeModelId?: string
+  vectorDbConfigs?: unknown[]
 }
 
 /** 预加载向渲染暴露的受控 API 类型 */
@@ -97,6 +128,22 @@ export interface PreloadApi {
     delete: (sessionId: string) => Promise<void>
     /** 清空历史（可排除当前会话） */
     clear: (excludeSessionId?: string) => Promise<number>
+  }
+  settings: {
+    /** 列出所有模型配置 */
+    modelList: () => Promise<ModelConfig[]>
+    /** 获取当前激活配置 */
+    getActiveModel: () => Promise<ModelConfig | null>
+    /** 设置激活配置 */
+    setActiveModel: (id: string) => Promise<void>
+    /** 新增或更新模型配置 */
+    upsertModel: (config: ModelConfig) => Promise<void>
+    /** 删除模型配置 */
+    deleteModel: (id: string) => Promise<void>
+    /** 导出设置为 JSON 字符串 */
+    exportSettings: () => Promise<string>
+    /** 导入设置（JSON 字符串） */
+    importSettings: (json: string) => Promise<void>
   }
 }
 

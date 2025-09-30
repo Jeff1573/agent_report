@@ -6,6 +6,7 @@
  */
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import { makeChatModel } from '../llm/factory.js';
+import { getActiveModelOverrides } from '../utils/settings-bridge.js';
 import { getDefaultTools } from '../tools/registry.js';
 import { getSystemMessage } from '../config/prompts.js';
 import { logger } from '../utils/logger.js';
@@ -212,15 +213,24 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
   const checkpointer = await createCheckpointer(persistenceMode);
   
   // ⭐ 关键：关闭模型级 streaming（避免不完整的"流式函数调用"片段）
-  const baseLLM = makeChatModel({
-    streaming: false,     // 重要：不要逐 token 流；函数调用一次性返回，最稳
-    streamUsage: false,
-  });
-  
-  // 强制至少使用一个工具，避免模型"凭记忆直接回答"（参考rag-demo.ts）
-  // 注意：bindTools 的类型定义与我们的 AnyTool 类型不完全匹配，使用 as any 绕过类型检查
-  const llm = tools.length > 0 ? baseLLM.bindTools(tools as any, { tool_choice: "any" }) : baseLLM;
-  logger.info(`LLM configured with ${tools.length} tools, tool_choice: ${tools.length > 0 ? 'any' : 'none'}`);
+  async function buildAgent() {
+    // 动态读取当前激活配置，每次调用前重建 LLM/Agent，确保前端切换即时生效
+    const active = await getActiveModelOverrides().catch(() => undefined);
+    const baseLLM = makeChatModel({
+      streaming: false,
+      streamUsage: false,
+      ...(active ?? {}),
+    });
+    const llm = tools.length > 0 ? baseLLM.bindTools(tools as any, { tool_choice: 'any' }) : baseLLM;
+    logger.info(`LLM configured with ${tools.length} tools, tool_choice: ${tools.length > 0 ? 'any' : 'none'}`);
+    const agent = createReactAgent({
+      llm: llm as any,
+      tools: tools as any,
+      checkpointSaver: checkpointer as any,
+      version: 'v2',
+    });
+    return agent
+  }
   
   /**
    * 创建 ReAct Agent
@@ -230,12 +240,6 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
    * - 这些断言是必需的，用于兼容不同工具实现（ServerTool/ClientTool/ToolNode）
    * - 运行时类型安全由 LangChain 内部保证
    */
-  const agent = createReactAgent({
-    llm: llm as any,
-    tools: tools as any,
-    checkpointSaver: checkpointer as any,
-    version: 'v2',
-  });
   const summarizer: Summarizer = config.summarizer ?? defaultSummarizer;
 
   const listeners = new Set<(e: StreamEvent) => void>();
@@ -250,7 +254,10 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
       { role: 'system', content: getSystemMessage() },
       { role: 'user', content: input }
     ];
-    const res = await llm.invoke(messagesWithSystem) as LLMResponse;
+    // 为 runOnce 构建一次使用当前配置的 LLM
+    const active = await getActiveModelOverrides().catch(() => undefined);
+    const baseLLM = makeChatModel({ streaming: false, streamUsage: false, ...(active ?? {}) });
+    const res = await (baseLLM as any).invoke(messagesWithSystem) as LLMResponse;
     const out = res?.content ?? '';
     
     // 处理多种响应格式
@@ -343,6 +350,7 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
       ...(threadId ? { configurable: { thread_id: threadId } } : {}),
       recursionLimit: RECURSION_LIMIT,
     } as GraphConfig;
+    const agent = await buildAgent();
     const gen = observeValues(agent, inputs, config);
     yield* pipeWithSummary(gen, options);
   }
@@ -360,6 +368,7 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
       ...(threadId ? { configurable: { thread_id: threadId } } : {}),
       recursionLimit: RECURSION_LIMIT,
     } as GraphConfig;
+    const agent = await buildAgent();
     const gen = observeEvents(agent, inputs, config);
     yield* pipeWithSummary(gen, options);
   }

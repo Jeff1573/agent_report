@@ -4,7 +4,9 @@
  */
 import React from 'react'
 import { ConfigProvider, App as AntApp } from 'antd'
+import { HashRouter, Routes, Route } from 'react-router-dom'
 import { AgentChat } from './components/AgentChat'
+import { SettingsPage } from './components/SettingsPage'
 
 export const App: React.FC = () => {
   return (
@@ -16,7 +18,12 @@ export const App: React.FC = () => {
       }}
     >
       <AntApp>
-        <AgentChat />
+        <HashRouter>
+          <Routes>
+            <Route path="/" element={<AgentChat />} />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Routes>
+        </HashRouter>
       </AntApp>
     </ConfigProvider>
   )
