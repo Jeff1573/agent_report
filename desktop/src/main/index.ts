@@ -101,6 +101,11 @@ app.whenReady().then(() => {
 
   createWindow()
 
+  // 在不阻塞 UI 的情况下预热 Agent Runtime（懒加载提前完成）
+  setTimeout(() => {
+    agentService.warmup().catch(err => console.warn('[AgentService] warmup failed', err))
+  }, 0)
+
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
     // dock icon is clicked and there are no other windows open.

@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 /**
  * Agent 服务：在 Electron Main 进程中运行 Agent Runtime
  * 
@@ -10,10 +11,10 @@
 import type { AgentStreamEvent, AgentChatOptions } from '../../shared/ipc'
 
 /** Agent Runtime 接口（避免直接导入导致打包问题） */
-interface AgentRuntime {
-  streamEvents(input: string, options?: { summary?: boolean; threadId?: string }): AsyncGenerator<any>
-  streamValues(input: string, options?: { summary?: boolean; threadId?: string }): AsyncGenerator<any>
-  close(): Promise<void>
+type AgentRuntime = {
+  streamEvents: (...args: unknown[]) => AsyncGenerator<unknown>
+  streamValues: (...args: unknown[]) => AsyncGenerator<unknown>
+  close: () => Promise<void>
 }
 
 let runtime: AgentRuntime | null = null
@@ -70,13 +71,13 @@ async function getRuntime(): Promise<AgentRuntime> {
     // 开发环境：直接导入 agent workspace 的编译后文件
     // 生产环境：需要在打包配置中确保 agent 模块被正确包含
     
-    let createAgentRuntime: any
+    let createAgentRuntime: (() => Promise<AgentRuntime>) | undefined
     
     try {
       // 使用别名导入（在 electron.vite.config.ts 中配置）
       // Vite 会自动解析 .ts 扩展名
       const module = await import('agent/runtime/index')
-      createAgentRuntime = module.createAgentRuntime
+      createAgentRuntime = module.createAgentRuntime as (() => Promise<AgentRuntime>) | undefined
       console.log('[AgentService] Agent 模块导入成功')
     } catch (err) {
       console.error('[AgentService] Agent 模块导入失败:', err)
@@ -90,7 +91,7 @@ async function getRuntime(): Promise<AgentRuntime> {
     runtime = await createAgentRuntime()
     console.log('[AgentService] Agent Runtime 初始化成功')
     
-    return runtime
+    return runtime!
   } catch (error) {
     console.error('[AgentService] Agent Runtime 初始化失败:', error)
     throw new Error(`Agent 初始化失败: ${error instanceof Error ? error.message : String(error)}`)
@@ -100,19 +101,33 @@ async function getRuntime(): Promise<AgentRuntime> {
 }
 
 /**
+ * 预热 Agent：在应用启动时调用，提前完成懒加载初始化
+ * 不抛错，避免影响主流程
+ */
+export async function warmup(): Promise<void> {
+  try {
+    await getRuntime()
+    console.log('[AgentService] Warmup complete')
+  } catch (err) {
+    console.warn('[AgentService] Warmup failed:', err)
+  }
+}
+
+/**
  * 将 Agent 内部事件转换为 IPC 事件格式
  */
-function transformEvent(ev: any): AgentStreamEvent {
+function transformEvent(ev: unknown): AgentStreamEvent {
+  const e = (ev as Partial<AgentStreamEvent>) || {}
   return {
-    type: ev.type,
-    ts: ev.ts || Date.now(),
-    role: ev.role,
-    token: ev.token,
-    content: ev.content,
-    name: ev.name,
-    args: ev.args,
-    output: ev.output,
-    error: ev.error
+    type: (e.type as AgentStreamEvent['type']) ?? 'error',
+    ts: typeof e.ts === 'number' ? e.ts : Date.now(),
+    role: e.role,
+    token: e.token,
+    content: e.content,
+    name: e.name,
+    args: e.args,
+    output: e.output,
+    error: e.error
   }
 }
 
@@ -123,6 +138,7 @@ function transformEvent(ev: any): AgentStreamEvent {
  * @param onEvent 事件回调（发送给渲染进程）
  * @param options 聊天选项
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function chatStream(
   message: string,
   onEvent: (event: AgentStreamEvent) => void,
@@ -139,7 +155,7 @@ export async function chatStream(
     }
 
     // 使用 events 模式（更适合流式 UI）
-    const stream = rt.streamEvents(message, streamOptions)
+    const stream = (rt.streamEvents as (msg: string, opts?: { summary?: boolean; threadId?: string }) => AsyncGenerator<unknown>)(message, streamOptions)
 
     for await (const ev of stream) {
       // 检查是否被中止
