@@ -131,25 +131,14 @@ async function main() {
     'Agent package.json 存在'
   )
 
-  // 2. 检查 .env 配置
+  // 2. 检查 .env 配置（已改为可选，支持应用内配置）
   log('\n2. 检查环境配置...', 'blue')
   const envPath = findEnvFile()
   if (envPath) {
-    log(`  找到配置文件: ${path.relative(path.resolve(__dirname, '../..'), envPath)}`, 'blue')
-    allPassed &= checkEnvVar('OPENAI_API_KEY', 'OPENAI_API_KEY 已配置')
-    allPassed &= checkEnvVar('OPENAI_MODEL', 'OPENAI_MODEL 已配置')
-    // RAG 配置改为可选：仅提示，不影响总体通过
-    const chromaOk = checkEnvVar('CHROMA_URL', 'CHROMA_URL 已配置 (RAG 可选)')
-    const collOk = checkEnvVar('KB_COLLECTION', 'KB_COLLECTION 已配置 (RAG 可选)')
-    checkEnvVar('KB_EMBED_MODEL', 'KB_EMBED_MODEL 已配置 (RAG 可选, openai 模式)')
-    checkEnvVar('TAVILY_API_KEY', 'TAVILY_API_KEY 已配置 (可选)')
-    if (!(chromaOk && collOk)) {
-      log('  说明: 未配置向量库，将禁用内部检索（kb_search）功能', 'yellow')
-    }
+    log(`  检测到 .env: ${path.relative(path.resolve(__dirname, '../..'), envPath)}（信息提示，不阻断）`, 'blue')
+    // 环境变量现可在应用内配置，跳过逐项检查
   } else {
-    log('✗ 未找到 .env 文件（已检查根目录和 agent/ 目录）', 'red')
-    log('  建议: 在项目根目录创建 .env 文件', 'yellow')
-    allPassed = false
+    log('  已跳过 .env 检测：现在支持在应用内配置提供商', 'yellow')
   }
 
   // 3. 检查 ChromaDB 连接
@@ -167,6 +156,8 @@ async function main() {
     } else {
       log('✗ CHROMA_URL 未在 .env 中配置', 'yellow')
     }
+  } else {
+    log('  已跳过 ChromaDB 检测：未配置 .env，且可在应用内配置', 'blue')
   }
 
   // 4. 检查依赖
