@@ -56,8 +56,8 @@
 }
 
 .chat-input-focus:focus {
-  border-color: #667eea !important;
-  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2) !important;
+  border-color: #16a34a !important;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.2) !important;
 }
 
 /* 按钮悬停效果 */
@@ -130,7 +130,7 @@
 .empty-state-icon {
   font-size: 64px;
   margin-bottom: 24px;
-  color: #667eea;
+  color: #16a34a;
 }
 
 .empty-state-title {
@@ -178,7 +178,7 @@
 }
 
 .message-bubble.user {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
   border-radius: 16px 16px 4px 16px;
   color: #ffffff;
 }
@@ -225,7 +225,7 @@
 }
 
 .message-avatar.assistant {
-  color: #667eea;
+  color: #16a34a;
 }
 
 .message-sender {
@@ -238,7 +238,7 @@
 }
 
 .message-sender.assistant {
-  color: #667eea;
+  color: #16a34a;
 }
 
 .message-timestamp {
@@ -319,7 +319,7 @@
 }
 
 .input-textarea:focus {
-  border-color: #667eea;
+  border-color: #16a34a;
   box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
 }
 
@@ -334,7 +334,7 @@
 /* 鼠标触碰动效已移除 */
 
 .input-button.send {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
   border: none;
   color: white;
 }
@@ -366,7 +366,7 @@
 
 .card-title-icon {
   font-size: 20px;
-  color: #667eea;
+  color: #16a34a;
 }
 
 .card-title-text {
@@ -399,7 +399,7 @@
 
 .history-session-item.current {
   background: #f0f5ff !important;
-  border: 2px solid #667eea !important;
+  border: 2px solid #16a34a !important;
 }
 
 .history-session-item:hover:not(.current) {
@@ -433,7 +433,7 @@
 }
 
 .history-session-title.current {
-  color: #667eea !important;
+  color: #16a34a !important;
 }
 
 .history-session-title:not(.current) {
