@@ -23,10 +23,19 @@ export type AnyTool = StructuredTool | {
 export type ToolCallArgs = Record<string, unknown>
 
 /**
+ * 消息内容项（可能是字符串或对象）
+ */
+export interface MessageContentPart {
+  type?: string
+  text?: string
+  [key: string]: unknown
+}
+
+/**
  * LLM 响应类型
  */
 export interface LLMResponse {
-  content?: string | BaseMessage[] | unknown
+  content?: string | MessageContentPart[] | BaseMessage[]
   tool_calls?: ToolCall[]
   usage?: {
     prompt_tokens?: number

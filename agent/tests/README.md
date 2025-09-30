@@ -1,6 +1,71 @@
-# RAG 元数据过滤功能测试指南
+# Agent 测试套件
 
-## 功能验证结果 ✅
+本目录包含 Agent 核心功能的测试脚本，用于验证各个模块的正确性。
+
+## 测试文件列表
+
+### 核心模块测试
+
+1. **test-config-validation.ts** - 配置验证测试（P1-7）
+   - 测试 `validateConfig()` 函数
+   - 验证环境变量检测
+   - 测试配置摘要功能
+
+2. **test-embeddings.ts** - 嵌入模型工厂测试（P0-2）
+   - 测试 OpenAI/Gemini 嵌入模型创建
+   - 验证 API Key 检测
+   - 测试错误消息
+
+3. **test-tool-registry.ts** - 工具注册表测试（P1-8）
+   - 测试工具加载策略
+   - 验证错误处理统一性
+   - 检查核心/可选工具标识
+
+### RAG 功能测试
+
+4. **test-metadata.ts** - 元数据提取测试
+   - 路径推断
+   - Frontmatter 解析
+   - 语言检测
+
+5. **test-rag-simple.ts** - RAG 完整功能验证
+   - 基本检索
+   - MMR 重排
+   - 元数据过滤
+
+## 快速开始
+
+### 运行所有核心测试
+```bash
+cd agent
+npx tsx tests/test-config-validation.ts
+npx tsx tests/test-embeddings.ts
+npx tsx tests/test-tool-registry.ts
+```
+
+### 运行单个测试
+```bash
+# 配置验证
+npx tsx tests/test-config-validation.ts
+
+# 嵌入模型
+npx tsx tests/test-embeddings.ts
+
+# 工具注册
+npx tsx tests/test-tool-registry.ts
+
+# 元数据提取
+npx tsx tests/test-metadata.ts
+
+# RAG 功能
+npx tsx tests/test-rag-simple.ts
+```
+
+---
+
+## RAG 元数据过滤功能验证
+
+### 功能验证结果 ✅
 
 根据测试结果，RAG 元数据过滤功能已**成功实现**，各项核心功能均正常工作：
 

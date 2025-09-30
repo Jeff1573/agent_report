@@ -15,7 +15,7 @@ import { createCheckpointer, type PersistenceMode } from './persistence.js';
 import { CHECKPOINT_MODE, THREAD_ID_FALLBACK, RECURSION_LIMIT, TOOL_MAX_CALLS, TOOL_TIMEOUT_MS, TOOL_RETRY_ATTEMPTS, validateConfig } from '../config/env.js';
 import { defaultSummarizer } from '../stream/summarizers.js';
 import { getMCPTools, cleanupMCPClient, type MultiServerMCPClient } from '../tools/mcp.js';
-import type { AnyTool, ToolCallArgs, LLMResponse, ToolResult, GraphConfig, KBSearchResult, SourceReference } from './types.js';
+import type { AnyTool, ToolCallArgs, LLMResponse, ToolResult, GraphConfig, KBSearchResult, SourceReference, MessageContentPart } from './types.js';
 
 export interface RuntimeConfig {
   /** 自定义工具集（默认注册表） */
@@ -48,6 +48,11 @@ export interface AgentRuntime {
  */
 class SegmentAccumulator {
   private current: InteractionSegment | null = null;
+
+  /** 获取当前片段（只读访问） */
+  getCurrent(): InteractionSegment | null {
+    return this.current;
+  }
 
   start(inputText?: string) {
     this.current = {
@@ -213,10 +218,18 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
   });
   
   // 强制至少使用一个工具，避免模型"凭记忆直接回答"（参考rag-demo.ts）
+  // 注意：bindTools 的类型定义与我们的 AnyTool 类型不完全匹配，使用 as any 绕过类型检查
   const llm = tools.length > 0 ? baseLLM.bindTools(tools as any, { tool_choice: "any" }) : baseLLM;
   logger.info(`LLM configured with ${tools.length} tools, tool_choice: ${tools.length > 0 ? 'any' : 'none'}`);
   
-  // 这里做宽松断言以兼容不同工具实现（ServerTool/ClientTool/ToolNode），避免类型收窄导致的构建失败
+  /**
+   * 创建 ReAct Agent
+   * 
+   * 类型断言说明：
+   * - llm/tools/checkpointSaver 使用 'as any' 是因为 LangChain 的类型定义与我们的接口不完全匹配
+   * - 这些断言是必需的，用于兼容不同工具实现（ServerTool/ClientTool/ToolNode）
+   * - 运行时类型安全由 LangChain 内部保证
+   */
   const agent = createReactAgent({
     llm: llm as any,
     tools: tools as any,
@@ -237,21 +250,37 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
       { role: 'system', content: getSystemMessage() },
       { role: 'user', content: input }
     ];
-    const res = await llm.invoke(messagesWithSystem);
-    const out = (res as any)?.content ?? '';
-    return typeof out === 'string' ? out : Array.isArray(out) ? out.map((c: any) => (typeof c === 'string' ? c : c?.text ?? '')).join('') : String(out ?? '');
+    const res = await llm.invoke(messagesWithSystem) as LLMResponse;
+    const out = res?.content ?? '';
+    
+    // 处理多种响应格式
+    if (typeof out === 'string') {
+      return out;
+    } else if (Array.isArray(out)) {
+      // 处理内容数组（可能是 MessageContentPart[] 或 BaseMessage[]）
+      return out.map((c: unknown) => {
+        if (typeof c === 'string') return c;
+        if (typeof c === 'object' && c !== null) {
+          const part = c as Record<string, unknown>;
+          return String(part.text ?? part.content ?? '');
+        }
+        return '';
+      }).join('');
+    } else {
+      return String(out ?? '');
+    }
   }
 
   async function* pipeWithSummary(gen: AsyncGenerator<StreamEvent>, options?: StreamOptions): AsyncGenerator<StreamEvent> {
     const showSummary = options?.summary === true;
     const acc = new SegmentAccumulator();
     for await (const ev of gen) {
-      if (!acc['current']) acc.start();
+      if (!acc.getCurrent()) acc.start();
       acc.feed(ev);
       // 在 round-end 前尝试补充引用列表（若答案未包含 [n] 且工具结果有 sources）
       if (ev.type === 'round-end') {
         try {
-          const seg = (acc as any).current as InteractionSegment;
+          const seg = acc.getCurrent();
           const answer = String(seg?.assistantText || '');
           const needCite = !/\[[0-9]+\]/.test(answer) && !/参考来源/.test(answer);
           if (needCite && Array.isArray(seg?.toolCalls) && seg.toolCalls.length > 0) {
@@ -259,15 +288,15 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
             for (let i = seg.toolCalls.length - 1; i >= 0; i--) {
               const call = seg.toolCalls[i];
               if (!call?.result) continue;
-              const out = call.result as any;
+              const out = call.result as ToolResult;
               const raw = typeof out?.content === 'string' ? out.content : undefined;
               if (!raw || raw.length === 0) continue;
               // 优先解析 JSON
               let extra: string | undefined;
               try {
-                const j = JSON.parse(raw);
+                const j = JSON.parse(raw) as KBSearchResult;
                 if (Array.isArray(j?.sources) && j.sources.length > 0) {
-                  const refs = j.sources.map((s: any) => `- [${s?.index}] ${s?.ref ?? ''}`).join('\n');
+                  const refs = j.sources.map((s: SourceReference) => `- [${s?.index}] ${s?.ref ?? ''}`).join('\n');
                   extra = `\n参考来源\n${refs}`;
                 }
               } catch {
@@ -313,8 +342,8 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
     const config = {
       ...(threadId ? { configurable: { thread_id: threadId } } : {}),
       recursionLimit: RECURSION_LIMIT,
-    };
-    const gen = observeValues(agent, inputs, config as any);
+    } as GraphConfig;
+    const gen = observeValues(agent, inputs, config);
     yield* pipeWithSummary(gen, options);
   }
 
@@ -330,8 +359,8 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
     const config = {
       ...(threadId ? { configurable: { thread_id: threadId } } : {}),
       recursionLimit: RECURSION_LIMIT,
-    };
-    const gen = observeEvents(agent, inputs, config as any);
+    } as GraphConfig;
+    const gen = observeEvents(agent, inputs, config);
     yield* pipeWithSummary(gen, options);
   }
 
