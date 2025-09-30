@@ -89,14 +89,51 @@
   background: #f0f2f5;
 }
 
+/* 顶部导航栏 */
+.chat-header {
+  background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+  padding: 16px 24px;
+  border-radius: 20px 20px 0 0;
+  box-shadow:
+    0 4px 16px rgba(22, 163, 74, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  position: relative;
+}
+
+.chat-header::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.2) 50%, transparent 100%);
+}
+
+.chat-header-title {
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
 /* 聊天卡片容器 */
 .chat-card {
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  border-radius: 0 0 20px 20px;
+  background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.08),
+    0 2px 8px rgba(0, 0, 0, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  position: relative;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-top: none;
 }
 
 .chat-card-body {
@@ -179,15 +216,22 @@
 
 .message-bubble.user {
   background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
-  border-radius: 16px 16px 4px 16px;
+  border-radius: 18px 18px 6px 18px;
   color: #ffffff;
+  box-shadow:
+    0 4px 12px rgba(22, 163, 74, 0.15),
+    0 2px 4px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .message-bubble.assistant {
-  background: #ffffff;
-  border-radius: 16px 16px 16px 4px;
-  color: #000000;
-  border: 1px solid #e8e8e8;
+  background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+  border-radius: 18px 18px 18px 6px;
+  color: #1f2937;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.04),
+    0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
 .message-bubble.streaming {
@@ -298,10 +342,14 @@
 
 /* 输入区域 */
 .input-area {
-  background: #ffffff;
-  padding: 12px;
-  border-radius: 8px;
-  border: 1px solid #e8e8e8;
+  background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(8px);
   flex-shrink: 0;
 }
 
@@ -389,22 +437,31 @@
 }
 
 .history-session-item {
-  padding: 12px !important;
-  margin-bottom: 8px !important;
-  background: #ffffff !important;
-  border-radius: 8px !important;
-  border: 1px solid #e8e8e8 !important;
+  padding: 16px !important;
+  margin-bottom: 12px !important;
+  background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%) !important;
+  border-radius: 12px !important;
+  border: 1px solid rgba(0, 0, 0, 0.05) !important;
   cursor: pointer !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04) !important;
+  transition: all 0.2s !important;
 }
 
 .history-session-item.current {
-  background: #f0f5ff !important;
+  background: linear-gradient(145deg, #f0f5ff 0%, #e0f2fe 100%) !important;
   border: 2px solid #16a34a !important;
+  box-shadow:
+    0 4px 16px rgba(22, 163, 74, 0.12),
+    0 2px 8px rgba(0, 0, 0, 0.08) !important;
 }
 
 .history-session-item:hover:not(.current) {
-  background: #fafafa !important;
-  border-color: #d9d9d9 !important;
+  background: linear-gradient(145deg, #fafafa 0%, #f5f5f5 100%) !important;
+  border-color: #16a34a !important;
+  transform: translateY(-1px) !important;
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.06),
+    0 2px 8px rgba(0, 0, 0, 0.04) !important;
 }
 
 .history-session-content {
