@@ -1,15 +1,70 @@
-# MindForge 工作区使用说明（npm Workspaces）
+# MindForge - AI Agent 桌面应用
 
-> 文档说明：本仓库在根目录启用 npm Workspaces，以便统一安装依赖、在根目录运行各子包脚本。文件编码：UTF-8。
+> **MindForge** 是一个基于 ReAct Agent 的智能桌面助手，集成了知识库检索、网络搜索、MCP 工具调用等能力。
 
-## 环境要求
-- Node：建议与团队统一（当前仓库 `engines` 为 `>=20 <21`；本机 `.nvmrc` 为 `22`，请在团队内确认后统一）。
-- npm：10.x（本仓库 `packageManager` 记录为 `npm@10.9.2`）。
+[![Node Version](https://img.shields.io/badge/node-%3E%3D22.0.0-brightgreen)](https://nodejs.org/)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## 目录结构
-- `desktop/`：Electron + React 工作区
-- `packages/*`：未来新增的库/应用工作区
- - `agent/`：LangChain / OpenAI 兼容 / LangGraph 封装与示例
+## ✨ 特性
+
+- 🤖 **完整的 ReAct Agent**: 基于 LangGraph 的多步推理和工具调用
+- 🔍 **知识库检索**: ChromaDB 向量数据库 + 智能 RAG
+- 🌐 **网络搜索**: 集成 Tavily API 获取实时信息
+- 🔧 **MCP 工具生态**: 支持 Model Context Protocol 工具
+- 💬 **流式对话**: 实时展示思考过程和工具调用
+- 🎨 **现代 UI**: Electron + React + Ant Design
+
+## 🚀 快速开始
+
+### 1. 安装依赖
+
+```bash
+npm install
+```
+
+### 2. 配置环境
+
+在项目根目录创建 `.env` 文件（参考 `desktop/ENV_CONFIG.md`）：
+
+```bash
+OPENAI_API_KEY=sk-xxxxx
+OPENAI_MODEL=gpt-4
+CHROMA_URL=http://localhost:8000
+KB_COLLECTION=mindforge_kb
+```
+
+### 3. 启动 ChromaDB
+
+```bash
+docker run -p 8000:8000 chromadb/chroma
+```
+
+### 4. 运行应用
+
+```bash
+npm run dev
+```
+
+📖 **详细教程**: 查看 [快速入门指南](docs/QUICK_START.md)
+
+## 📦 项目结构
+
+```
+mindForge_re/
+├── desktop/          # Electron 桌面应用
+│   ├── src/
+│   │   ├── main/     # 主进程 (Agent Runtime)
+│   │   ├── renderer/ # 渲染进程 (React UI)
+│   │   ├── preload/  # 预加载脚本 (IPC 桥接)
+│   │   └── shared/   # 共享类型定义
+│   └── scripts/      # 工具脚本
+├── agent/            # ReAct Agent 核心
+│   ├── runtime/      # Agent 运行时
+│   ├── tools/        # 工具集 (kb/search/mcp)
+│   ├── services/     # 服务层 (RAG/embeddings)
+│   └── config/       # 配置和提示词
+├── AST_Fast/         # 代码分析服务
+└── docs/             # 文档
 
 ## 安装
 - 一次性安装全部工作区依赖（在仓库根目录）：
@@ -76,7 +131,121 @@ npm run demo:kb:chroma -w agent -- --q "什么是 RAG？" --collection your_coll
 - 根脚本未参与批量：默认不包含，需加 `--include-workspace-root`。
 - Node 版本不一致警告：若与 `engines` 不匹配，npm 仅警告（除非启用 engine-strict）。建议团队统一 Node 版本以减少锁文件漂移。
 
-## 参考文档（官方）
-- Using npm Workspaces（v11）
-- npm run（`--workspaces`、`--workspace/-w`、`--if-present`、`--include-workspace-root`）
-- npm init（`npm init -w <dir>` 创建工作区）
+## 📚 文档
+
+- [快速入门指南](docs/QUICK_START.md) - 5分钟快速上手
+- [Electron 集成文档](docs/ELECTRON_INTEGRATION.md) - 完整架构说明
+- [Agent 实现分析](docs/AGENT_ANALYSIS.md) - ReAct Agent 特性分析
+- [RAG 优化方案](docs/RAG优化方案.md) - 知识库检索优化
+
+## 🛠️ 开发指南
+
+### 运行 Agent 单独测试
+
+```bash
+cd agent
+npm start -- --input "你的问题"
+```
+
+### 代码入库
+
+```bash
+cd agent
+npm run ingest:code -- --dir ../
+```
+
+### 构建桌面应用
+
+```bash
+npm run build:win  # Windows
+npm run build:mac  # macOS
+```
+
+## 🔧 配置说明
+
+### 必需配置
+
+- `OPENAI_API_KEY`: LLM API 密钥
+- `OPENAI_MODEL`: 使用的模型 (如 gpt-4)
+- `CHROMA_URL`: ChromaDB 服务地址
+- `KB_COLLECTION`: 知识库集合名
+- `KB_EMBED_MODEL`: 嵌入模型
+
+### 可选配置
+
+- `TAVILY_API_KEY`: Tavily 搜索 API
+- `RECURSION_LIMIT`: Agent 递归深度限制
+- `TOOL_MAX_CALLS`: 工具调用次数限制
+
+详见 [ENV_CONFIG.md](desktop/ENV_CONFIG.md)
+
+## 🏗️ 架构
+
+```
+┌────────────────────────────────┐
+│  React UI (Renderer Process)   │
+│  - 聊天界面                     │
+│  - 流式消息展示                 │
+└──────────────┬─────────────────┘
+               │ IPC (contextBridge)
+┌──────────────┴─────────────────┐
+│  Main Process (Electron)       │
+│  - Agent Runtime 管理           │
+│  - 事件转发                     │
+└──────────────┬─────────────────┘
+               │
+┌──────────────┴─────────────────┐
+│  ReAct Agent (LangGraph)       │
+│  ├─ 推理循环                    │
+│  ├─ 工具调用                    │
+│  └─ 结果观察                    │
+└────────────────────────────────┘
+```
+
+## 🧪 运行测试
+
+```bash
+# Agent 功能测试
+npm run test -w agent
+
+# 类型检查
+npm run typecheck:all
+```
+
+## 📝 npm Workspaces 管理
+
+### 向特定工作区添加依赖
+
+```bash
+npm install <package> -w ./desktop
+npm install <package> -w ./agent
+```
+
+### 批量运行所有工作区
+
+```bash
+npm run dev:all        # 开发模式
+npm run build:all      # 构建
+npm run typecheck:all  # 类型检查
+```
+
+## ❓ 常见问题
+
+查看 [快速入门指南 - 常见问题](docs/QUICK_START.md#常见问题)
+
+## 🤝 参与贡献
+
+欢迎提交 Issue 和 Pull Request！
+
+## 📄 许可证
+
+MIT License
+
+## 🙏 致谢
+
+基于以下优秀项目构建：
+- [LangChain](https://github.com/langchain-ai/langchainjs)
+- [LangGraph](https://github.com/langchain-ai/langgraphjs)
+- [Electron](https://www.electronjs.org/)
+- [React](https://react.dev/)
+- [Ant Design](https://ant.design/)

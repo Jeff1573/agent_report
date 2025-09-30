@@ -1,11 +1,32 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { IPC_CHANNELS, type PreloadApi } from '../shared/ipc'
+import { IPC_CHANNELS, type PreloadApi, type AgentStreamEvent } from '../shared/ipc'
 
 // 通过受控白名单向渲染端暴露 API
 const api: PreloadApi = {
   app: {
     getVersion: () => ipcRenderer.invoke(IPC_CHANNELS.APP_VERSION)
+  },
+  agent: {
+    chat: (message, options) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_CHAT, message, options),
+    chatStream: (message, onEvent, options) => {
+      // 为每次调用生成唯一的回调通道
+      const callbackChannel = `${IPC_CHANNELS.AGENT_CHAT_STREAM}-callback-${Date.now()}`
+      
+      // 注册事件监听器
+      const handler = (_event: Electron.IpcRendererEvent, event: AgentStreamEvent) => {
+        onEvent(event)
+      }
+      ipcRenderer.on(callbackChannel, handler)
+      
+      // 发送请求
+      return ipcRenderer.invoke(IPC_CHANNELS.AGENT_CHAT_STREAM, message, callbackChannel, options)
+        .finally(() => {
+          // 清理监听器
+          ipcRenderer.removeListener(callbackChannel, handler)
+        })
+    },
+    stop: () => ipcRenderer.invoke(IPC_CHANNELS.AGENT_STOP)
   }
 }
 

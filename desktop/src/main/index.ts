@@ -3,6 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { IPC_CHANNELS } from '../shared/ipc'
+import * as agentService from './services/agentService'
 
 function createWindow(): void {
   // Create the browser window.
@@ -57,6 +58,26 @@ app.whenReady().then(() => {
   // IPC 白名单：应用版本
   ipcMain.handle(IPC_CHANNELS.APP_VERSION, () => app.getVersion())
 
+  // IPC 白名单：Agent 相关
+  ipcMain.handle(IPC_CHANNELS.AGENT_CHAT, async (_event, message: string, options) => {
+    return agentService.chat(message, options)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.AGENT_CHAT_STREAM, async (event, message: string, callbackChannel: string, options) => {
+    await agentService.chatStream(
+      message,
+      (streamEvent) => {
+        // 通过回调通道发送事件给渲染进程
+        event.sender.send(callbackChannel, streamEvent)
+      },
+      options
+    )
+  })
+
+  ipcMain.handle(IPC_CHANNELS.AGENT_STOP, async () => {
+    await agentService.stopChat()
+  })
+
   createWindow()
 
   app.on('activate', function () {
@@ -73,6 +94,11 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+// 应用退出前清理资源
+app.on('before-quit', async () => {
+  await agentService.cleanup()
 })
 
 // In this file you can include the rest of your app"s specific main process
