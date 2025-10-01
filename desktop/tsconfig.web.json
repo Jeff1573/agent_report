@@ -7,11 +7,29 @@
     "src/preload/*.d.ts",
     "src/shared/**/*"
   ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "out",
+    "build",
+    "../agent",
+    "../agent/**/*",
+    "../AST_Fast",
+    "../AST_Fast/**/*",
+    "../node_modules",
+    "../node_modules/**/*",
+    "**/node_modules",
+    "**/node_modules/**/*"
+  ],
   "compilerOptions": {
     "composite": true,
     "strict": true,
+    // 禁用 TypeScript 的未使用变量检查，交由 ESLint 处理（警告级别）
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
     "baseUrl": ".",
     "jsx": "react-jsx",
+    "skipLibCheck": true,
     "paths": {
       "@renderer/*": [
         "src/renderer/src/*"

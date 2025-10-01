@@ -8,6 +8,9 @@
     "rootDir": ".",
     "noEmit": true,
     "strict": true,
+    // 禁用 TypeScript 的未使用变量检查，交由 ESLint 处理（警告级别）
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
     "skipLibCheck": true,
     "resolveJsonModule": true
   },
