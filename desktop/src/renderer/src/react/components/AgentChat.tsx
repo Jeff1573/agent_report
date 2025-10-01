@@ -251,11 +251,28 @@ export const AgentChat: React.FC = () => {
       okText: '确定',
       cancelText: '取消',
       okType: 'danger',
-      onOk: () => {
+      onOk: async () => {
+        // 清空前端状态
         setMessages([])
         setInput('')
         setCurrentContent('')
         setCurrentToolCalls([])
+        
+        // 立即保存空会话到文件，确保重启后仍然是空的
+        try {
+          const emptySession: SessionData = {
+            id: sessionId,
+            title: '新对话',
+            messages: [],
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+          }
+          await window.api.history.save(emptySession)
+          console.log('[AgentChat] 空会话已保存')
+        } catch (error) {
+          console.error('[AgentChat] 保存空会话失败:', error)
+        }
+        
         antMessage.success('对话已清空')
       }
     })

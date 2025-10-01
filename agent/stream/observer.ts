@@ -192,24 +192,26 @@ export async function* observeEvents(agent: any, inputs: any, cfg?: StreamConfig
 
     // 2) 模型结束 → 输出完整助手消息 + 回合结束
     if (event === 'on_chat_model_end') {
-      // 优先使用流式增量；若没有增量，尝试从 data.output 中提取最终文本
-      let finalText = accText;
-      if (!finalText) {
+      // 【修复】如果已经有流式增量，说明内容已通过 model-token 发送，无需再发 assistant-message
+      // 只在没有流式增量时（某些模型不支持流式），才从 data.output 中提取并发送完整文本
+      if (!accText) {
         const output = data?.output ?? data?.result ?? data?.response;
         const content = output?.content ?? output?.message?.content ?? output?.text ?? '';
-        const fallback = contentToString(content);
-        if (fallback) finalText = fallback;
-      }
-      if (finalText) {
-        const msgEv: AssistantMessageEvent = {
-          type: 'assistant-message',
-          ts: Date.now(),
-          role: 'assistant',
-          content: finalText,
-        };
-        yield msgEv;
-        accText = '';
+        const finalText = contentToString(content);
+        if (finalText) {
+          const msgEv: AssistantMessageEvent = {
+            type: 'assistant-message',
+            ts: Date.now(),
+            role: 'assistant',
+            content: finalText,
+          };
+          yield msgEv;
+          emittedAssistant = true;
+        }
+      } else {
+        // 如果有流式增量，标记已发送助手消息（通过 model-token）
         emittedAssistant = true;
+        accText = ''; // 清空累积文本
       }
       // 回合结束：在模型完成后触发；不设顶层 role，采用 meta.finalRole
       const endEv: RoundEndEvent = { type: 'round-end', ts: Date.now(), meta: { finalRole: 'assistant' } };

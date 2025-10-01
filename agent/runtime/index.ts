@@ -218,7 +218,7 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
   // 依据环境动态创建 checkpointer（MemorySaver / PostgresSaver）
   const checkpointer = await createCheckpointer(persistenceMode);
   
-  // ⭐ 关键：关闭模型级 streaming（避免不完整的"流式函数调用"片段）
+  // ⭐ 开启模型级 streaming 以支持真正的流式输出体验
   async function buildAgent() {
     // 动态读取合并配置：优先界面配置，其次环境变量
     // 每次调用前重建 LLM/Agent，确保界面切换即时生效
@@ -234,7 +234,7 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
     
     // 使用合并配置创建 LLM（优先级：合并配置 > 默认值）
     const baseLLM = makeChatModel({
-      streaming: false,
+      streaming: true,  // 开启流式输出，提供逐字显示体验
       streamUsage: false,
       ...mergedConfig,
     });
