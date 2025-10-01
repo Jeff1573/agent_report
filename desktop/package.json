@@ -15,6 +15,7 @@
     "typecheck:web": "npx tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "precheck": "node scripts/pre-dev-check.js",
+    "generate:icons": "node scripts/generate-icons.js",
     "start": "electron-vite preview",
     "dev": "npm run precheck && electron-vite dev",
     "dev:skip-check": "electron-vite dev",

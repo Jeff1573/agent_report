@@ -1,13 +1,38 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, nativeImage, type NativeImage } from 'electron'
 import { join } from 'path'
-import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import icon from '../../resources/icon.png?asset'
+import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { IPC_CHANNELS } from '../shared/ipc'
 import * as settingsService from './services/settingsService'
 import * as agentService from './services/agentService'
 import * as historyService from './services/historyService'
 
 function createWindow(): void {
+  // 获取应用图标 - 使用 app.isPackaged 判断是否为开发模式
+  const isDev = !app.isPackaged
+  let appIcon: NativeImage | string
+  
+  if (isDev) {
+    // 开发模式：从项目根目录构建绝对路径
+    // app.getAppPath() 在开发模式下指向项目的 desktop 目录
+    const projectRoot = app.getAppPath()
+    const iconPath = join(projectRoot, 'build/icon.png')
+    
+    console.log('[Icon Debug] 项目根目录:', projectRoot)
+    console.log('[Icon Debug] 图标绝对路径:', iconPath)
+    
+    appIcon = nativeImage.createFromPath(iconPath)
+    console.log('[Icon Debug] 图标是否为空:', appIcon.isEmpty())
+    
+    if (!appIcon.isEmpty()) {
+      console.log('[Icon Debug] 图标大小:', appIcon.getSize())
+    } else {
+      console.warn('[Icon Warning] 图标加载失败，使用默认图标')
+    }
+  } else {
+    // 生产模式：使用打包后的资源
+    appIcon = join(__dirname, '../../resources/icon.png')
+  }
+
   // Create the browser window.
   const mainWindow = new BrowserWindow({
     width: 900,
@@ -17,7 +42,7 @@ function createWindow(): void {
     show: false,
     autoHideMenuBar: true,
     backgroundColor: '#f0f2f5',  // 设置背景色，避免黑色闪烁
-    icon,
+    icon: appIcon,
     // 安全基线：禁用 Node、启用上下文隔离，仅通过 preload 暴露受控 API
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -39,7 +64,7 @@ function createWindow(): void {
 
   // HMR for renderer base on electron-vite cli.
   // Load the remote URL for development or the local html file for production.
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+  if (isDev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
@@ -50,6 +75,18 @@ function createWindow(): void {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
+  // 在开发模式下设置 Dock 图标（仅 macOS）
+  if (!app.isPackaged && process.platform === 'darwin' && app.dock) {
+    const iconPath = join(app.getAppPath(), 'build/icon.png')
+    const dockIcon = nativeImage.createFromPath(iconPath)
+    if (!dockIcon.isEmpty()) {
+      app.dock.setIcon(dockIcon)
+      console.log('[Icon Debug] Dock 图标已设置:', iconPath)
+    } else {
+      console.warn('[Icon Warning] Dock 图标加载失败')
+    }
+  }
+
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')
 
