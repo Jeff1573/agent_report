@@ -1,9 +1,10 @@
-import { app } from 'electron'
+import { app, shell } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import type { AppSettings, ModelConfig } from '../../shared/ipc'
 
 const SETTINGS_FILE = 'settings.json'
+const MCP_CONFIG_FILE = 'mcp.json'
 
 function getSettingsPath(): string {
   const userData = app.getPath('userData')
@@ -134,6 +135,73 @@ export async function importSettings(json: string): Promise<void> {
     saveSettings(obj)
   } catch (e) {
     throw new Error(`导入失败: ${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
+/**
+ * 获取 MCP 配置文件路径
+ * @returns MCP 配置文件的绝对路径
+ */
+function getMcpConfigPath(): string {
+  const userData = app.getPath('userData')
+  return path.join(userData, MCP_CONFIG_FILE)
+}
+
+/**
+ * 创建默认的 MCP 配置模板
+ * @returns 默认 MCP 配置的 JSON 字符串
+ */
+function createDefaultMcpConfig(): string {
+  const defaultConfig = {
+    mcpServers: {
+      // 示例配置 - stdio 类型（本地进程）
+      // "example-stdio": {
+      //   "command": "node",
+      //   "args": ["/path/to/your/mcp/server.js"],
+      //   "env": {}
+      // },
+      // 示例配置 - HTTP 类型（远程服务）
+      // "example-http": {
+      //   "type": "http",
+      //   "url": "http://localhost:3000/mcp",
+      //   "headers": {
+      //     "Authorization": "Bearer your-token"
+      //   }
+      // }
+    }
+  }
+  return JSON.stringify(defaultConfig, null, 2)
+}
+
+/**
+ * 在系统默认编辑器中打开 MCP 配置文件
+ * 如果文件不存在，则创建默认模板
+ */
+export async function openMcpConfig(): Promise<void> {
+  const mcpConfigPath = getMcpConfigPath()
+  
+  try {
+    // 检查文件是否存在，不存在则创建默认模板
+    if (!fs.existsSync(mcpConfigPath)) {
+      const defaultConfig = createDefaultMcpConfig()
+      fs.mkdirSync(path.dirname(mcpConfigPath), { recursive: true })
+      fs.writeFileSync(mcpConfigPath, defaultConfig, 'utf-8')
+      console.log(`[SettingsService] 已创建默认 MCP 配置文件: ${mcpConfigPath}`)
+    }
+    
+    // 使用系统默认编辑器打开文件
+    const result = await shell.openPath(mcpConfigPath)
+    
+    // 如果返回非空字符串，说明打开失败
+    if (result) {
+      throw new Error(`打开文件失败: ${result}`)
+    }
+    
+    console.log(`[SettingsService] 已在默认编辑器中打开 MCP 配置: ${mcpConfigPath}`)
+  } catch (e) {
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    console.error(`[SettingsService] 打开 MCP 配置失败:`, errorMsg)
+    throw new Error(`无法打开 MCP 配置文件: ${errorMsg}`)
   }
 }
 

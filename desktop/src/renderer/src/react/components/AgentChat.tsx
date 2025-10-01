@@ -110,6 +110,26 @@ export const AgentChat: React.FC = () => {
     return () => clearTimeout(timer)
   }, [messages, sessionId])
 
+  // 监听 MCP 配置重载事件
+  useEffect(() => {
+    const handleMcpReload = (_event: unknown, result: { success: boolean; error?: string }) => {
+      if (result.success) {
+        antMessage.success('MCP 配置已更新，Agent 已重新加载', 3)
+        console.log('[AgentChat] MCP 配置已重新加载')
+      } else {
+        antMessage.error(`MCP 配置重载失败: ${result.error || '未知错误'}`, 5)
+        console.error('[AgentChat] MCP 配置重载失败:', result.error)
+      }
+    }
+
+    // 使用 electron API 监听事件
+    const cleanup = window.electron.ipcRenderer.on('mcp-config-reloaded', handleMcpReload)
+
+    return () => {
+      if (cleanup) cleanup()
+    }
+  }, [])
+
   const handleSend: () => Promise<void> = async () => {
     if (!input.trim() || isLoading) return
 

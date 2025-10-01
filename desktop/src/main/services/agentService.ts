@@ -21,6 +21,7 @@ type AgentRuntime = {
 let runtime: AgentRuntime | null = null
 let isInitializing = false
 let abortController: AbortController | null = null
+let isChatting = false // 标记是否有进行中的对话
 
 /**
  * 懒加载 Agent Runtime
@@ -49,6 +50,14 @@ async function getRuntime(): Promise<AgentRuntime> {
     const userDataPath = app.getPath('userData')
     process.env.MF_USER_DATA_DIR = userDataPath
     console.log('[AgentService] 用户数据目录:', userDataPath)
+    
+    // 设置 MCP 配置文件路径，确保 Agent 运行时读取的路径与界面一致
+    // MCP 配置文件存储在: {userData}/mcp.json
+    if (!process.env.MCP_CONFIG_PATH) {
+      const mcpConfigPath = path.join(userDataPath, 'mcp.json')
+      process.env.MCP_CONFIG_PATH = mcpConfigPath
+      console.log('[AgentService] MCP 配置路径:', mcpConfigPath)
+    }
     
     // 配置 Agent 环境变量路径（如果 .env 在 agent 目录）
     // 注意：建议将 .env 放在项目根目录以简化配置
@@ -154,6 +163,7 @@ export async function chatStream(
 ): Promise<void> {
   // 创建新的 AbortController
   abortController = new AbortController()
+  isChatting = true // 标记对话开始
   
   try {
     const rt = await getRuntime()
@@ -192,6 +202,7 @@ export async function chatStream(
     })
   } finally {
     abortController = null
+    isChatting = false // 标记对话结束
   }
 }
 
@@ -232,5 +243,43 @@ export async function cleanup(): Promise<void> {
       console.error('[AgentService] 清理失败:', error)
     }
     runtime = null
+  }
+}
+
+/**
+ * 重新加载 Agent Runtime（用于 MCP 配置更新）
+ * 会关闭旧的 Runtime 并重新初始化，从而重新加载 MCP 工具
+ * 
+ * @throws 如果当前有进行中的对话，将抛出错误
+ */
+export async function reloadRuntime(): Promise<void> {
+  // 检查是否有进行中的对话
+  if (isChatting) {
+    console.warn('[AgentService] 无法重载：当前有进行中的对话')
+    throw new Error('当前有进行中的对话，请稍后重试')
+  }
+
+  // 检查是否正在初始化
+  if (isInitializing) {
+    console.warn('[AgentService] 无法重载：Runtime 正在初始化中')
+    throw new Error('Runtime 正在初始化中，请稍后重试')
+  }
+
+  console.log('[AgentService] 开始重新加载 Runtime...')
+
+  try {
+    // 清理旧的 Runtime
+    if (runtime) {
+      await runtime.close()
+      console.log('[AgentService] 旧 Runtime 已关闭')
+      runtime = null
+    }
+
+    // 重新初始化 Runtime
+    await getRuntime()
+    console.log('[AgentService] Runtime 重新加载成功')
+  } catch (error) {
+    console.error('[AgentService] Runtime 重新加载失败:', error)
+    throw new Error(`Runtime 重新加载失败: ${error instanceof Error ? error.message : String(error)}`)
   }
 }

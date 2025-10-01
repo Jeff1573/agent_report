@@ -1,10 +1,64 @@
 import { app, shell, BrowserWindow, ipcMain, nativeImage, type NativeImage } from 'electron'
 import { join } from 'path'
+import { watch, type FSWatcher } from 'fs'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { IPC_CHANNELS } from '../shared/ipc'
 import * as settingsService from './services/settingsService'
 import * as agentService from './services/agentService'
 import * as historyService from './services/historyService'
+
+// MCP 配置文件监听器
+let mcpConfigWatcher: FSWatcher | null = null
+let reloadDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+/**
+ * 监听 MCP 配置文件变化，自动重新加载 Agent Runtime
+ */
+function watchMCPConfig(): void {
+  const mcpConfigPath = join(app.getPath('userData'), 'mcp.json')
+  
+  try {
+    mcpConfigWatcher = watch(mcpConfigPath, (eventType) => {
+      if (eventType === 'change') {
+        console.log('[Main] 检测到 MCP 配置文件变化')
+        
+        // 防抖处理：延迟 1.5 秒执行，避免频繁重载
+        if (reloadDebounceTimer) {
+          clearTimeout(reloadDebounceTimer)
+        }
+        
+        reloadDebounceTimer = setTimeout(async () => {
+          console.log('[Main] 开始重新加载 Agent Runtime...')
+          
+          try {
+            await agentService.reloadRuntime()
+            console.log('[Main] Agent Runtime 重新加载成功')
+            
+            // 通知所有渲染进程
+            BrowserWindow.getAllWindows().forEach(win => {
+              win.webContents.send('mcp-config-reloaded', { success: true })
+            })
+          } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : String(error)
+            console.error('[Main] Agent Runtime 重新加载失败:', errorMsg)
+            
+            // 通知所有渲染进程
+            BrowserWindow.getAllWindows().forEach(win => {
+              win.webContents.send('mcp-config-reloaded', { 
+                success: false, 
+                error: errorMsg 
+              })
+            })
+          }
+        }, 1500) // 1.5 秒防抖
+      }
+    })
+    
+    console.log('[Main] MCP 配置文件监听已启动:', mcpConfigPath)
+  } catch (error) {
+    console.warn('[Main] 无法监听 MCP 配置文件:', error)
+  }
+}
 
 function createWindow(): void {
   // 获取应用图标 - 使用 app.isPackaged 判断是否为开发模式
@@ -163,8 +217,14 @@ app.whenReady().then(() => {
   ipcMain.handle(IPC_CHANNELS.SETTINGS_IMPORT, async (_event, json: string) => {
     await settingsService.importSettings(json)
   })
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_OPEN_MCP_CONFIG, async () => {
+    return settingsService.openMcpConfig()
+  })
 
   createWindow()
+
+  // 启动 MCP 配置文件监听
+  watchMCPConfig()
 
   // 在不阻塞 UI 的情况下预热 Agent Runtime（懒加载提前完成）
   setTimeout(() => {
@@ -196,6 +256,10 @@ app.on('window-all-closed', () => {
 // 应用退出前清理资源
 app.on('before-quit', async () => {
   await agentService.cleanup()
+  // 停止文件监听
+  if (mcpConfigWatcher) {
+    mcpConfigWatcher.close()
+  }
 })
 
 // In this file you can include the rest of your app"s specific main process

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Button, Card, Descriptions, Divider, Form, Input, InputNumber, List, Modal, Space, Typography, message, Upload } from 'antd'
-import { LeftOutlined, PlusOutlined, EditOutlined, DeleteOutlined, CheckOutlined, UploadOutlined, DownloadOutlined } from '@ant-design/icons'
+import { LeftOutlined, PlusOutlined, EditOutlined, DeleteOutlined, CheckOutlined, UploadOutlined, DownloadOutlined, SettingOutlined } from '@ant-design/icons'
 import type { ModelConfig } from '../../../../shared/ipc'
 import { useNavigate } from 'react-router-dom'
 
@@ -125,6 +125,16 @@ export const SettingsPage: React.FC = () => {
     return false
   }
 
+  const onOpenMcpConfig = async (): Promise<void> => {
+    try {
+      await window.api.settings.openMcpConfig()
+      message.success('已在默认编辑器中打开 MCP 配置文件')
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : '打开失败'
+      message.error(errorMsg)
+    }
+  }
+
   return (
     <div style={{ padding: 16 }}>
       <Button type="link" icon={<LeftOutlined />} onClick={() => navigate('/')}>返回</Button>
@@ -142,6 +152,16 @@ export const SettingsPage: React.FC = () => {
           </div>
         }
       >
+        <Divider orientation="left">MCP 配置</Divider>
+        <Space direction="vertical" style={{ width: '100%', marginBottom: 24 }}>
+          <Text type="secondary">
+            MCP (Model Context Protocol) 允许 Agent 连接外部工具和服务。点击下方按钮在系统默认编辑器中打开配置文件。
+          </Text>
+          <Button icon={<SettingOutlined />} onClick={onOpenMcpConfig}>
+            打开 MCP 配置文件
+          </Button>
+        </Space>
+
         <Divider orientation="left">模型配置</Divider>
         <List
           loading={loading}

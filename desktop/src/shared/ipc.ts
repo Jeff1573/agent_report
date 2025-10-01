@@ -23,7 +23,9 @@ export const IPC_CHANNELS = {
   SETTINGS_MODEL_UPSERT: 'settings/model/upsert',
   SETTINGS_MODEL_DELETE: 'settings/model/delete',
   SETTINGS_EXPORT: 'settings/export',
-  SETTINGS_IMPORT: 'settings/import'
+  SETTINGS_IMPORT: 'settings/import',
+  // MCP 配置相关
+  SETTINGS_OPEN_MCP_CONFIG: 'settings/openMcpConfig'
 } as const
 
 /** 流式事件类型 */
@@ -144,6 +146,8 @@ export interface PreloadApi {
     exportSettings: () => Promise<string>
     /** 导入设置（JSON 字符串） */
     importSettings: (json: string) => Promise<void>
+    /** 在系统默认编辑器中打开 MCP 配置文件 */
+    openMcpConfig: () => Promise<void>
   }
 }
 
