@@ -22,6 +22,9 @@ import { getMergedConfig, validateRuntimeConfig, getConfigSummary } from '../con
 import { defaultSummarizer } from '../stream/summarizers.js';
 import { getMCPTools, cleanupMCPClient, type MultiServerMCPClient } from '../tools/mcp.js';
 import type { AnyTool, ToolCallArgs, LLMResponse, ToolResult, GraphConfig, KBSearchResult, SourceReference, MessageContentPart } from './types.js';
+import { AgentExecutor, createToolCallingAgent } from 'langchain/agents';
+import { ChatPromptTemplate } from '@langchain/core/prompts';
+import { HumanMessage, AIMessage } from '@langchain/core/messages';
 
 export interface RuntimeConfig {
   /** 自定义工具集（默认注册表） */
@@ -30,6 +33,12 @@ export interface RuntimeConfig {
   summarizer?: Summarizer;
   /** 持久化模式：memory | postgres（默认取环境变量 CHECKPOINT_MODE） */
   persistenceMode?: PersistenceMode;
+  /**
+   * Agent 实现模式（实验性功能）
+   * - 'langgraph': 使用 LangGraph ReAct Agent（默认，原有实现）
+   * - 'executor': 使用 LangChain AgentExecutor（新实现，支持精细分类）
+   */
+  agentMode?: 'langgraph' | 'executor';
 }
 
 export interface StreamOptions {
@@ -218,7 +227,61 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
   // 依据环境动态创建 checkpointer（MemorySaver / PostgresSaver）
   const checkpointer = await createCheckpointer(persistenceMode);
   
-  // ⭐ 开启模型级 streaming 以支持真正的流式输出体验
+  // Agent 模式选择
+  const agentMode = config.agentMode ?? 'langgraph'; // 默认使用原有实现
+  
+  /**
+   * 构建 AgentExecutor（新实现，支持精细分类）
+   * 返回：{ executor, llm } 用于后续流式输出
+   */
+  async function buildAgentExecutor() {
+    const mergedResult = await getMergedConfig();
+    const { config: mergedConfig } = mergedResult;
+    
+    // 对话前严格验证
+    validateRuntimeConfig(mergedConfig);
+    
+    // 记录配置摘要
+    const summary = getConfigSummary(mergedResult);
+    logger.debug('使用合并配置构建 AgentExecutor:', summary);
+    
+    // 创建 LLM
+    const llm = makeChatModel({
+      streaming: true,
+      streamUsage: false,
+      ...mergedConfig,
+    });
+    
+    // 创建 Prompt 模板
+    const prompt = ChatPromptTemplate.fromMessages([
+      ["system", getSystemMessage()],
+      ["placeholder", "{chat_history}"],
+      ["human", "{input}"],
+      ["placeholder", "{agent_scratchpad}"],
+    ]);
+    
+    // 创建 Agent
+    const agent = await createToolCallingAgent({
+      llm,
+      tools: tools as any,
+      prompt,
+    });
+    
+    // 创建 AgentExecutor
+    const executor = new AgentExecutor({
+      agent,
+      tools: tools as any,
+      verbose: false,
+      returnIntermediateSteps: true, // 关键：返回中间步骤
+      maxIterations: 15, // 防止无限循环
+    });
+    
+    logger.info(`AgentExecutor configured with ${tools.length} tools`);
+    
+    return { executor, llm };
+  }
+  
+  // ⭐ 开启模型级 streaming 以支持真正的流式输出体验（LangGraph 模式）
   async function buildAgent() {
     // 动态读取合并配置：优先界面配置，其次环境变量
     // 每次调用前重建 LLM/Agent，确保界面切换即时生效
@@ -310,6 +373,53 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
     }
   }
 
+  /**
+   * 从 action.log 中提取 LLM 的思考过程
+   */
+  function extractThinking(log: string | undefined): string | undefined {
+    if (!log) return undefined;
+    const lines = log.split('\n');
+    // 查找不是工具调用指令的那一行（通常是LLM的思考）
+    const thinking = lines.find(line => 
+      !line.startsWith('Invoking') && 
+      line.trim().length > 0 &&
+      !line.includes('tool') &&
+      !line.includes('{') // 排除JSON参数行
+    );
+    return thinking?.trim();
+  }
+
+  /**
+   * 从 intermediateSteps 重建消息历史，用于流式输出最终答案
+   */
+  function buildMessagesFromSteps(input: string, steps: any[]): any[] {
+    const messages = [new HumanMessage(input)];
+    
+    for (const step of steps) {
+      // 添加 AI 的工具调用
+      messages.push(new AIMessage({
+        content: "",
+        tool_calls: [{
+          name: step.action.tool,
+          args: step.action.toolInput,
+          id: step.action.toolCallId,
+          type: 'tool_call',
+        }],
+      }));
+      
+      // 添加工具执行结果
+      messages.push({
+        role: 'tool',
+        content: typeof step.observation === 'string' 
+          ? step.observation 
+          : JSON.stringify(step.observation),
+        tool_call_id: step.action.toolCallId,
+      } as any);
+    }
+    
+    return messages;
+  }
+
   async function* pipeWithSummary(gen: AsyncGenerator<StreamEvent>, options?: StreamOptions): AsyncGenerator<StreamEvent> {
     const showSummary = options?.summary === true;
     const acc = new SegmentAccumulator();
@@ -369,7 +479,102 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
     }
   }
 
-  async function* streamValues(input: string, options?: StreamOptions): AsyncGenerator<StreamEvent> {
+  /**
+   * 新实现：基于 AgentExecutor 的精细分类流式输出
+   */
+  async function* streamValuesWithExecutor(input: string, options?: StreamOptions): AsyncGenerator<StreamEvent> {
+    try {
+      // 1. 构建 AgentExecutor
+      const { executor, llm } = await buildAgentExecutor();
+      
+      // 2. 执行完整流程，获取中间步骤
+      logger.info('[AgentExecutor] 开始执行...');
+      const result = await executor.invoke({
+        input,
+        returnIntermediateSteps: true,
+      });
+      
+      logger.info(`[AgentExecutor] 执行完成，共 ${result.intermediateSteps?.length || 0} 个中间步骤`);
+      
+      // 3. 立即发送工具调用和执行结果事件
+      if (result.intermediateSteps && Array.isArray(result.intermediateSteps)) {
+        for (const step of result.intermediateSteps) {
+          // 3.1 发送工具调用事件（LLM 决策）
+          const toolCallEvent: StreamEvent = {
+            type: 'tool-call',
+            ts: Date.now(),
+            role: 'tool',
+            stage: 'decision', // 标记为决策阶段
+            name: step.action.tool,
+            args: step.action.toolInput,
+            thinking: extractThinking(step.action.log),
+            meta: { callId: step.action.toolCallId },
+          };
+          emit(toolCallEvent);
+          yield toolCallEvent;
+          
+          // 3.2 发送工具执行结果事件
+          const toolResultEvent: StreamEvent = {
+            type: 'tool-result',
+            ts: Date.now(),
+            role: 'tool',
+            stage: 'execution', // 标记为执行阶段
+            name: step.action.tool,
+            output: step.observation,
+            meta: { callId: step.action.toolCallId },
+          };
+          emit(toolResultEvent);
+          yield toolResultEvent;
+        }
+      }
+      
+      // 4. 流式发送最终答案
+      logger.info('[AgentExecutor] 开始流式输出最终答案...');
+      const messages = buildMessagesFromSteps(input, result.intermediateSteps || []);
+      const stream = await llm.stream(messages);
+      
+      for await (const chunk of stream) {
+        const token = String(chunk.content || '');
+        if (token) {
+          const tokenEvent: StreamEvent = {
+            type: 'model-token',
+            ts: Date.now(),
+            role: 'assistant',
+            stage: 'answer', // 标记为答案阶段
+            token,
+          };
+          emit(tokenEvent);
+          yield tokenEvent;
+        }
+      }
+      
+      // 5. 发送结束事件
+      const endEvent: StreamEvent = {
+        type: 'round-end',
+        ts: Date.now(),
+        meta: { finalRole: 'assistant' },
+      };
+      emit(endEvent);
+      yield endEvent;
+      
+      logger.info('[AgentExecutor] 流式输出完成');
+      
+    } catch (error) {
+      logger.error('[AgentExecutor] 执行失败:', error);
+      const errorEvent: StreamEvent = {
+        type: 'error',
+        ts: Date.now(),
+        error,
+      };
+      emit(errorEvent);
+      yield errorEvent;
+    }
+  }
+
+  /**
+   * 原实现：基于 LangGraph ReAct 的流式输出
+   */
+  async function* streamValuesWithLangGraph(input: string, options?: StreamOptions): AsyncGenerator<StreamEvent> {
     const messagesWithSystem = [
       { role: 'system', content: getSystemMessage() },
       { role: 'user', content: input }
@@ -385,6 +590,19 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
     const agent = await buildAgent();
     const gen = observeValues(agent, inputs, config);
     yield* pipeWithSummary(gen, options);
+  }
+
+  /**
+   * 流式输出（根据 agentMode 选择实现）
+   */
+  async function* streamValues(input: string, options?: StreamOptions): AsyncGenerator<StreamEvent> {
+    if (agentMode === 'executor') {
+      logger.info('[Runtime] 使用 AgentExecutor 模式');
+      yield* streamValuesWithExecutor(input, options);
+    } else {
+      logger.info('[Runtime] 使用 LangGraph 模式');
+      yield* streamValuesWithLangGraph(input, options);
+    }
   }
 
   async function* streamEvents(input: string, options?: StreamOptions): AsyncGenerator<StreamEvent> {

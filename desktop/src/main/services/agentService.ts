@@ -18,6 +18,14 @@ type AgentRuntime = {
   close: () => Promise<void>
 }
 
+/** Agent Runtime 配置接口 */
+type RuntimeConfig = {
+  agentMode?: 'langgraph' | 'executor'
+  tools?: unknown[]
+  summarizer?: unknown
+  persistenceMode?: 'memory' | 'postgres'
+}
+
 let runtime: AgentRuntime | null = null
 let isInitializing = false
 let abortController: AbortController | null = null
@@ -32,7 +40,7 @@ async function getRuntime(): Promise<AgentRuntime> {
 
   if (isInitializing) {
     // 等待初始化完成
-    await new Promise(resolve => setTimeout(resolve, 100))
+    await new Promise<void>(resolve => setTimeout(resolve, 100))
     return getRuntime()
   }
 
@@ -88,13 +96,15 @@ async function getRuntime(): Promise<AgentRuntime> {
     // 开发环境：直接导入 agent workspace 的编译后文件
     // 生产环境：需要在打包配置中确保 agent 模块被正确包含
     
-    let createAgentRuntime: (() => Promise<AgentRuntime>) | undefined
+    let createAgentRuntime: ((config?: RuntimeConfig) => Promise<AgentRuntime>) | undefined
     
     try {
       // 使用别名导入（在 electron.vite.config.ts 中配置）
       // Vite 会自动解析 .ts 扩展名
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore - Agent 模块在独立的 workspace，TypeScript 无法静态解析，但运行时动态导入可用
       const module = await import('agent/runtime/index')
-      createAgentRuntime = module.createAgentRuntime as (() => Promise<AgentRuntime>) | undefined
+      createAgentRuntime = module.createAgentRuntime as ((config?: RuntimeConfig) => Promise<AgentRuntime>) | undefined
       console.log('[AgentService] Agent 模块导入成功')
     } catch (err) {
       console.error('[AgentService] Agent 模块导入失败:', err)
@@ -105,7 +115,12 @@ async function getRuntime(): Promise<AgentRuntime> {
       throw new Error('Agent 模块导入成功但 createAgentRuntime 函数不存在')
     }
     
-    runtime = await createAgentRuntime()
+    // 读取 Agent 模式配置（从环境变量）
+    // 可选值：'langgraph' (默认) 或 'executor' (新实现，精细分类)
+    const agentMode = (process.env.AGENT_MODE || 'langgraph') as 'langgraph' | 'executor'
+    console.log('[AgentService] Agent 模式:', agentMode)
+    
+    runtime = await createAgentRuntime({ agentMode })
     console.log('[AgentService] Agent Runtime 初始化成功')
     
     return runtime!
@@ -132,6 +147,7 @@ export async function warmup(): Promise<void> {
 
 /**
  * 将 Agent 内部事件转换为 IPC 事件格式
+ * 支持新增的 stage 和 thinking 字段（用于精细分类）
  */
 function transformEvent(ev: unknown): AgentStreamEvent {
   const e = (ev as Partial<AgentStreamEvent>) || {}
@@ -139,12 +155,14 @@ function transformEvent(ev: unknown): AgentStreamEvent {
     type: (e.type as AgentStreamEvent['type']) ?? 'error',
     ts: typeof e.ts === 'number' ? e.ts : Date.now(),
     role: e.role,
+    stage: e.stage, // 🆕 事件阶段
     token: e.token,
     content: e.content,
     name: e.name,
     args: e.args,
     output: e.output,
-    error: e.error
+    error: e.error,
+    thinking: e.thinking, // 🆕 LLM 思考过程
   }
 }
 

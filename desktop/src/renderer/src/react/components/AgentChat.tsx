@@ -25,7 +25,11 @@ interface Message {
   role: 'user' | 'assistant'
   content: string
   timestamp: number
-  toolCalls?: Array<{ name: string; args: unknown }>
+  toolCalls?: Array<{ 
+    name: string
+    args: unknown
+    thinking?: string  // LLM 的思考过程
+  }>
 }
 
 // 生成会话标题（从第一条用户消息截取）
@@ -44,7 +48,8 @@ export const AgentChat: React.FC = () => {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [currentContent, setCurrentContent] = useState('')
-  const [currentToolCalls, setCurrentToolCalls] = useState<Array<{ name: string; args: unknown }>>([])
+  const [currentToolCalls, setCurrentToolCalls] = useState<Array<{ name: string; args: unknown; thinking?: string }>>([])
+  const [currentStage, setCurrentStage] = useState<'decision' | 'execution' | 'answer' | undefined>(undefined)
   const [sessionId, setSessionId] = useState(() => `session-${Date.now()}`)
   const [historyVisible, setHistoryVisible] = useState(false)
   const [modelList, setModelList] = useState<ModelConfig[]>([])
@@ -112,7 +117,7 @@ export const AgentChat: React.FC = () => {
 
   // 监听 MCP 配置重载事件
   useEffect(() => {
-    const handleMcpReload = (_event: unknown, result: { success: boolean; error?: string }) => {
+    const handleMcpReload = (_event: unknown, result: { success: boolean; error?: string }): void => {
       if (result.success) {
         antMessage.success('MCP 配置已更新，Agent 已重新加载', 3)
         console.log('[AgentChat] MCP 配置已重新加载')
@@ -146,6 +151,7 @@ export const AgentChat: React.FC = () => {
     setIsLoading(true)
     setCurrentContent('')
     setCurrentToolCalls([])
+    setCurrentStage(undefined)
 
     try {
       await window.api.agent.chatStream(
@@ -168,6 +174,11 @@ export const AgentChat: React.FC = () => {
   }
 
   const handleStreamEvent = (evt: AgentStreamEvent): void => {
+    // 更新当前阶段
+    if (evt.stage) {
+      setCurrentStage(evt.stage)
+    }
+
     switch (evt.type) {
       case 'model-token':
         if (evt.token) {
@@ -183,7 +194,11 @@ export const AgentChat: React.FC = () => {
 
       case 'tool-call':
         if (evt.name) {
-          setCurrentToolCalls(prev => [...prev, { name: evt.name!, args: evt.args }])
+          setCurrentToolCalls(prev => [...prev, { 
+            name: evt.name!, 
+            args: evt.args,
+            thinking: evt.thinking  // 🆕 保存 LLM 思考
+          }])
         }
         break
 
@@ -206,6 +221,7 @@ export const AgentChat: React.FC = () => {
           return '' // 清空当前内容
         })
         setCurrentToolCalls([]) // 清空工具调用
+        setCurrentStage(undefined) // 清空阶段
         break
 
       case 'error':
@@ -237,6 +253,7 @@ export const AgentChat: React.FC = () => {
         setInput('')
         setCurrentContent('')
         setCurrentToolCalls([])
+        setCurrentStage(undefined)
         // 生成新的 sessionId
         setSessionId(`session-${Date.now()}`)
         antMessage.success('已开始新对话')
@@ -257,6 +274,7 @@ export const AgentChat: React.FC = () => {
         setInput('')
         setCurrentContent('')
         setCurrentToolCalls([])
+        setCurrentStage(undefined)
         
         // 立即保存空会话到文件，确保重启后仍然是空的
         try {
@@ -284,6 +302,7 @@ export const AgentChat: React.FC = () => {
     setInput('')
     setCurrentContent('')
     setCurrentToolCalls([])
+    setCurrentStage(undefined)
   }
 
   const renderMessage = (msg: Message): JSX.Element => {
@@ -320,16 +339,24 @@ export const AgentChat: React.FC = () => {
           {/* 工具调用标签 */}
           {msg.toolCalls && msg.toolCalls.length > 0 && (
             <div className="tool-calls-container">
-              <Space wrap size={[4, 4]}>
+              <Space wrap size={[4, 4]} direction="vertical">
                 {msg.toolCalls.map((call, idx) => (
-                  <Tag
-                    key={idx}
-                    icon={<ToolOutlined />}
-                    color="blue"
-                    className="tool-tag"
-                  >
-                    {call.name}
-                  </Tag>
+                  <div key={idx}>
+                    <Tooltip title={call.thinking || '工具调用'}>
+                      <Tag
+                        icon={<ToolOutlined />}
+                        color="blue"
+                        className="tool-tag"
+                      >
+                        {call.name}
+                      </Tag>
+                    </Tooltip>
+                    {call.thinking && (
+                      <Text type="secondary" style={{ fontSize: '12px', marginLeft: '8px' }}>
+                        💭 {call.thinking}
+                      </Text>
+                    )}
+                  </div>
                 ))}
               </Space>
             </div>
@@ -444,6 +471,17 @@ export const AgentChat: React.FC = () => {
                   <RobotOutlined className="message-avatar assistant" />
                   <Text className="message-sender assistant">MindForge</Text>
                   <Spin size="small" />
+                  {currentStage && (
+                    <Tag color={
+                      currentStage === 'decision' ? 'gold' :
+                      currentStage === 'execution' ? 'processing' :
+                      'success'
+                    } style={{ marginLeft: '8px' }}>
+                      {currentStage === 'decision' ? '🤔 决策中' :
+                       currentStage === 'execution' ? '⚙️ 执行中' :
+                       '💭 回答中'}
+                    </Tag>
+                  )}
                   <span className="streaming-indicator" />
                 </div>
 
@@ -455,16 +493,24 @@ export const AgentChat: React.FC = () => {
                 {/* 工具调用标签 */}
                 {currentToolCalls.length > 0 && (
                   <div className="tool-calls-container">
-                    <Space wrap size={[4, 4]}>
+                    <Space wrap size={[4, 4]} direction="vertical">
                       {currentToolCalls.map((call, idx) => (
-                        <Tag
-                          key={idx}
-                          icon={<ToolOutlined />}
-                          color="processing"
-                          className="tool-tag"
-                        >
-                          {call.name}
-                        </Tag>
+                        <div key={idx}>
+                          <Tooltip title={call.thinking || '工具调用'}>
+                            <Tag
+                              icon={<ToolOutlined />}
+                              color="processing"
+                              className="tool-tag"
+                            >
+                              {call.name}
+                            </Tag>
+                          </Tooltip>
+                          {call.thinking && (
+                            <Text type="secondary" style={{ fontSize: '12px', marginLeft: '8px' }}>
+                              💭 {call.thinking}
+                            </Text>
+                          )}
+                        </div>
                       ))}
                     </Space>
                   </div>

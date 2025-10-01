@@ -37,17 +37,29 @@ export type StreamEventType =
   | 'round-end'
   | 'error'
 
+/**
+ * 事件阶段标识（用于精细分类）
+ * - decision: LLM 决策阶段（决定调用哪个工具）
+ * - execution: 工具执行阶段（Agent 执行工具）
+ * - answer: 最终答案阶段（LLM 生成回答）
+ */
+export type EventStage = 'decision' | 'execution' | 'answer'
+
 /** Agent 流式事件 */
 export interface AgentStreamEvent {
   type: StreamEventType
   ts: number
   role?: 'assistant' | 'tool' | 'user' | 'system' | 'unknown'
+  /** 事件阶段（可选，用于精细分类） */
+  stage?: EventStage
   token?: string
   content?: string
   name?: string
   args?: unknown
   output?: unknown
   error?: unknown
+  /** LLM 的思考过程（可选，仅用于 tool-call 事件） */
+  thinking?: string
 }
 
 /** Agent 聊天选项 */

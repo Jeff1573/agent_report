@@ -16,6 +16,14 @@ export type StreamEventType =
 
 import type { UnifiedRole } from "../llm/message-role.js";
 
+/**
+ * 事件阶段标识（用于精细分类）
+ * - decision: LLM 决策阶段（决定调用哪个工具）
+ * - execution: 工具执行阶段（Agent 执行工具）
+ * - answer: 最终答案阶段（LLM 生成回答）
+ */
+export type EventStage = 'decision' | 'execution' | 'answer';
+
 /** 事件公共元信息 */
 export interface StreamEventBase {
   type: StreamEventType;
@@ -28,6 +36,11 @@ export interface StreamEventBase {
    * - round-end/error → 留空或 'unknown'
    */
   role?: UnifiedRole;
+  /**
+   * 事件阶段（可选）。
+   * 用于 UI 层精确区分不同阶段的内容。
+   */
+  stage?: EventStage;
   meta?: {
     runId?: string;
     threadId?: string;
@@ -52,6 +65,11 @@ export interface ToolCallEvent extends StreamEventBase {
   type: 'tool-call';
   name: string;
   args: unknown;
+  /**
+   * LLM 的思考过程（可选）。
+   * 在 AgentExecutor 模式下，从 action.log 中提取。
+   */
+  thinking?: string;
 }
 
 export interface ToolResultEvent extends StreamEventBase {
