@@ -1,6 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain, nativeImage, type NativeImage } from 'electron'
 import { join } from 'path'
-import { watch, type FSWatcher } from 'fs'
+import { watch, type FSWatcher, readFileSync, existsSync } from 'fs'
+import { createHash } from 'crypto'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { IPC_CHANNELS } from '../shared/ipc'
 import * as settingsService from './services/settingsService'
@@ -10,54 +11,125 @@ import * as historyService from './services/historyService'
 // MCP 配置文件监听器
 let mcpConfigWatcher: FSWatcher | null = null
 let reloadDebounceTimer: ReturnType<typeof setTimeout> | null = null
+let lastMcpConfigHash: string | null = null
+
+/**
+ * 计算 MCP 配置文件的内容哈希。
+ * 说明：采用原始字节的 SHA-256 哈希，任何内容变化（包括空白/换行）都会产生不同哈希。
+ *
+ * @param filePath 配置文件绝对路径
+ * @returns 哈希字符串（hex）或 null（文件不存在）
+ */
+function computeMcpConfigHash(filePath: string): string | null {
+  try {
+    if (!existsSync(filePath)) return null
+    const buf = readFileSync(filePath)
+    const h = createHash('sha256')
+    h.update(buf)
+    return h.digest('hex')
+  } catch (e) {
+    console.warn('[Main] 读取 MCP 配置计算哈希失败：', e)
+    return null
+  }
+}
 
 /**
  * 监听 MCP 配置文件变化，自动重新加载 Agent Runtime
  */
 function watchMCPConfig(): void {
   const mcpConfigPath = join(app.getPath('userData'), 'mcp.json')
-  
-  try {
-    mcpConfigWatcher = watch(mcpConfigPath, (eventType) => {
-      if (eventType === 'change') {
-        console.log('[Main] 检测到 MCP 配置文件变化')
-        
-        // 防抖处理：延迟 1.5 秒执行，避免频繁重载
-        if (reloadDebounceTimer) {
-          clearTimeout(reloadDebounceTimer)
-        }
-        
-        reloadDebounceTimer = setTimeout(async () => {
-          console.log('[Main] 开始重新加载 Agent Runtime...')
-          
-          try {
-            await agentService.reloadRuntime()
-            console.log('[Main] Agent Runtime 重新加载成功')
-            
-            // 通知所有渲染进程
-            BrowserWindow.getAllWindows().forEach(win => {
-              win.webContents.send('mcp-config-reloaded', { success: true })
-            })
-          } catch (error) {
-            const errorMsg = error instanceof Error ? error.message : String(error)
-            console.error('[Main] Agent Runtime 重新加载失败:', errorMsg)
-            
-            // 通知所有渲染进程
-            BrowserWindow.getAllWindows().forEach(win => {
-              win.webContents.send('mcp-config-reloaded', { 
-                success: false, 
-                error: errorMsg 
-              })
-            })
-          }
-        }, 1500) // 1.5 秒防抖
+
+  /**
+   * 尝试关闭已有 watcher。
+   */
+  function closeWatcher(): void {
+    if (mcpConfigWatcher) {
+      try {
+        mcpConfigWatcher.close()
+      } catch (e) {
+        // 忽略 watcher 关闭时的异常（可能已被系统回收）
       }
-    })
-    
-    console.log('[Main] MCP 配置文件监听已启动:', mcpConfigPath)
-  } catch (error) {
-    console.warn('[Main] 无法监听 MCP 配置文件:', error)
+      mcpConfigWatcher = null
+    }
   }
+
+  /**
+   * 执行内容变更检查并在不同哈希时触发重载。
+   */
+  async function checkAndReloadIfChanged(reason: 'change' | 'rename'): Promise<void> {
+    // 防抖：延迟 1.5s 汇聚多次写入/原子替换
+    if (reloadDebounceTimer) clearTimeout(reloadDebounceTimer)
+    reloadDebounceTimer = setTimeout(async () => {
+      const currentHash = computeMcpConfigHash(mcpConfigPath)
+      if (!currentHash) {
+        console.warn('[Main] MCP 配置不存在或读取失败，跳过本次检查')
+        return
+      }
+      if (lastMcpConfigHash && currentHash === lastMcpConfigHash) {
+        console.log(`[Main] MCP 配置${reason}事件触发，但内容未变化，已忽略。`)
+        return
+      }
+
+      // 更新基准哈希并尝试重载
+      lastMcpConfigHash = currentHash
+      console.log(`[Main] 检测到 MCP 配置内容变化（来源: ${reason}），开始重新加载 Agent Runtime...`)
+      try {
+        await agentService.reloadRuntime()
+        console.log('[Main] Agent Runtime 重新加载成功')
+        BrowserWindow.getAllWindows().forEach(win => {
+          win.webContents.send('mcp-config-reloaded', { success: true })
+        })
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        console.error('[Main] Agent Runtime 重新加载失败:', errorMsg)
+        BrowserWindow.getAllWindows().forEach(win => {
+          win.webContents.send('mcp-config-reloaded', { success: false, error: errorMsg })
+        })
+      }
+    }, 1500)
+  }
+
+  /**
+   * 创建并启动文件监听；在 rename 后可调用以重建 watcher。
+   */
+  function startWatching(): void {
+    // 初始化一次哈希作为基线，避免应用启动后第一次 change 即误报
+    lastMcpConfigHash = computeMcpConfigHash(mcpConfigPath)
+
+    try {
+      closeWatcher()
+      mcpConfigWatcher = watch(mcpConfigPath, (eventType) => {
+        const type = eventType as 'change' | 'rename'
+        if (type === 'change') {
+          void checkAndReloadIfChanged('change')
+        } else if (type === 'rename') {
+          // rename 常见于编辑器原子保存；
+          // 1) 立即检查内容是否变化；2) 轻微延时后重建 watcher（旧句柄可能失效）。
+          void checkAndReloadIfChanged('rename')
+          setTimeout(() => {
+            // 文件可能被替换/短暂不存在，存在后再重建
+            if (existsSync(mcpConfigPath)) {
+              console.log('[Main] 检测到 MCP 配置文件 rename，正在重建监听器...')
+              startWatching()
+            } else {
+              // 若仍不存在，稍后再次尝试（最多一次）
+              setTimeout(() => {
+                if (existsSync(mcpConfigPath)) {
+                  console.log('[Main] MCP 配置文件已恢复，重建监听器...')
+                  startWatching()
+                }
+              }, 500)
+            }
+          }, 200)
+        }
+      })
+      console.log('[Main] MCP 配置文件监听已启动:', mcpConfigPath)
+    } catch (error) {
+      console.warn('[Main] 无法监听 MCP 配置文件:', error)
+    }
+  }
+
+  startWatching()
 }
 
 function createWindow(): void {
