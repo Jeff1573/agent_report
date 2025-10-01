@@ -1,7 +1,7 @@
 import { app, shell } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
-import type { AppSettings, ModelConfig } from '../../shared/ipc'
+import type { AppSettings, ModelConfig, StreamingValidationResult } from '../../shared/ipc'
 
 const SETTINGS_FILE = 'settings.json'
 const MCP_CONFIG_FILE = 'mcp.json'
@@ -205,5 +205,105 @@ export async function openMcpConfig(): Promise<void> {
   }
 }
 
+/**
+ * 验证模型配置的流式支持
+ * 
+ * @param modelId 要验证的模型配置ID
+ * @returns 验证结果，包含是否支持流式、延迟等信息
+ */
+export async function validateModelStreaming(modelId: string): Promise<StreamingValidationResult> {
+  try {
+    console.log(`[SettingsService] 开始验证模型流式支持: ${modelId}`)
+    
+    // 1. 读取配置
+    const settings = ensureSettings()
+    const modelConfig = settings.modelConfigs.find(c => c.id === modelId)
+    
+    if (!modelConfig) {
+      throw new Error(`模型配置不存在: ${modelId}`)
+    }
+    
+    // 2. 设置用户数据目录环境变量
+    const userDataPath = app.getPath('userData')
+    process.env.MF_USER_DATA_DIR = userDataPath
+    
+    // 3. 动态导入验证器（运行时导入）
+    // @ts-ignore - agent workspace 在运行时可用，但 TypeScript 配置不包含跨 workspace 引用
+    const { validateStreamingSupport } = await import('agent/llm/streaming-validator')
+    
+    // 4. 构建验证配置
+    const validateConfig = {
+      provider: modelConfig.baseURL ? 'custom' : 'openai',
+      model: modelConfig.model,
+      apiKey: modelConfig.apiKey || '',
+      baseURL: modelConfig.baseURL,
+      temperature: modelConfig.temperature ?? 0,
+      timeout: modelConfig.timeout ?? 60000,
+      maxRetries: modelConfig.maxRetries ?? 2,
+    }
+    
+    console.log(`[SettingsService] 验证配置:`, {
+      model: validateConfig.model,
+      baseURL: validateConfig.baseURL,
+      hasApiKey: !!validateConfig.apiKey
+    })
+    
+    // 5. 执行验证（15秒超时）
+    const result = await validateStreamingSupport(validateConfig, 15000)
+    
+    console.log(`[SettingsService] 验证完成:`, {
+      supported: result.supported,
+      duration: result.duration,
+      firstTokenLatency: result.firstTokenLatency,
+      error: result.error
+    })
+    
+    // 6. 保存验证结果到配置
+    modelConfig.streamingValidation = result
+    saveSettings(settings)
+    
+    console.log(`[SettingsService] 验证结果已保存到配置文件`)
+    
+    return result
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    console.error(`[SettingsService] 验证模型流式支持失败:`, errorMsg)
+    
+    // 返回失败结果
+    const failedResult: StreamingValidationResult = {
+      supported: false,
+      duration: 0,
+      error: errorMsg,
+      timestamp: Date.now(),
+    }
+    
+    // 尝试保存失败结果
+    try {
+      const settings = ensureSettings()
+      const modelConfig = settings.modelConfigs.find(c => c.id === modelId)
+      if (modelConfig) {
+        modelConfig.streamingValidation = failedResult
+        saveSettings(settings)
+      }
+    } catch {
+      // 忽略保存错误
+    }
+    
+    return failedResult
+  }
+}
 
-
+/**
+ * 在系统默认编辑器中打开设置配置文件
+ */
+export async function openConfig(): Promise<void> {
+  try {
+    const settingsPath = getSettingsPath()
+    await shell.openPath(settingsPath)
+    console.log(`[SettingsService] 已在默认编辑器中打开设置文件: ${settingsPath}`)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    console.error(`[SettingsService] 打开设置文件失败:`, errorMsg)
+    throw new Error(`打开设置文件失败: ${errorMsg}`)
+  }
+}

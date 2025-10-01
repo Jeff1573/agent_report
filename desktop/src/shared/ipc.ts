@@ -22,8 +22,10 @@ export const IPC_CHANNELS = {
   SETTINGS_MODEL_SET_ACTIVE: 'settings/model/setActive',
   SETTINGS_MODEL_UPSERT: 'settings/model/upsert',
   SETTINGS_MODEL_DELETE: 'settings/model/delete',
+  SETTINGS_MODEL_VALIDATE_STREAMING: 'settings/model/validateStreaming',
   SETTINGS_EXPORT: 'settings/export',
   SETTINGS_IMPORT: 'settings/import',
+  SETTINGS_OPEN_CONFIG: 'settings/openConfig',
   // MCP 配置相关
   SETTINGS_OPEN_MCP_CONFIG: 'settings/openMcpConfig'
 } as const
@@ -80,6 +82,22 @@ export interface SessionData {
   updatedAt: number
 }
 
+/** 流式验证结果 */
+export interface StreamingValidationResult {
+  /** 是否支持流式 */
+  supported: boolean
+  /** 验证耗时（毫秒） */
+  duration: number
+  /** 错误信息 */
+  error?: string
+  /** 收到的 token 数量 */
+  tokenCount?: number
+  /** 首个 token 延迟（毫秒） */
+  firstTokenLatency?: number
+  /** 验证时间戳 */
+  timestamp: number
+}
+
 /** 模型配置（Bearer 鉴权，后续可扩展自定义 Header） */
 export interface ModelConfig {
   id: string
@@ -92,6 +110,8 @@ export interface ModelConfig {
   maxRetries?: number
   streaming?: boolean
   updatedAt: number
+  /** 流式验证结果（可选，验证后自动填充） */
+  streamingValidation?: StreamingValidationResult
 }
 
 /** 设置文件结构（预留向量数据库配置） */
@@ -142,12 +162,16 @@ export interface PreloadApi {
     upsertModel: (config: ModelConfig) => Promise<void>
     /** 删除模型配置 */
     deleteModel: (id: string) => Promise<void>
+    /** 验证模型的流式支持 */
+    validateStreaming: (modelId: string) => Promise<StreamingValidationResult>
     /** 导出设置为 JSON 字符串 */
     exportSettings: () => Promise<string>
     /** 导入设置（JSON 字符串） */
     importSettings: (json: string) => Promise<void>
     /** 在系统默认编辑器中打开 MCP 配置文件 */
     openMcpConfig: () => Promise<void>
+    /** 在系统默认编辑器中打开设置配置文件 */
+    openConfig: () => Promise<void>
   }
 }
 

@@ -211,6 +211,9 @@ app.whenReady().then(() => {
   ipcMain.handle(IPC_CHANNELS.SETTINGS_MODEL_DELETE, async (_event, id: string) => {
     await settingsService.deleteModelConfig(id)
   })
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_MODEL_VALIDATE_STREAMING, async (_event, modelId: string) => {
+    return settingsService.validateModelStreaming(modelId)
+  })
   ipcMain.handle(IPC_CHANNELS.SETTINGS_EXPORT, async () => {
     return settingsService.exportSettings()
   })
@@ -219,6 +222,9 @@ app.whenReady().then(() => {
   })
   ipcMain.handle(IPC_CHANNELS.SETTINGS_OPEN_MCP_CONFIG, async () => {
     return settingsService.openMcpConfig()
+  })
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_OPEN_CONFIG, async () => {
+    return settingsService.openConfig()
   })
 
   createWindow()
