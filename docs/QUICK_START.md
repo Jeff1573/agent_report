@@ -19,12 +19,21 @@
 npm install
 ```
 
-### 步骤 2: 配置环境变量
+### 步骤 2: 配置模型
 
+MindForge 支持两种配置方式，**推荐使用界面配置**：
+
+#### 方式 1：界面配置（推荐）⭐
+1. 先跳过此步骤，直接启动应用
+2. 在应用中进入"设置"页面
+3. 添加模型配置并填写 API Key
+4. 保存后即可使用
+
+#### 方式 2：环境变量配置（可选）
 在项目**根目录**创建 `.env` 文件：
 
 ```bash
-# 必需（最小可运行）
+# 必需（如果不使用界面配置）
 OPENAI_API_KEY=sk-xxxxx
 OPENAI_MODEL=gpt-4
 OPENAI_BASE_URL=https://api.openai.com/v1
@@ -41,6 +50,8 @@ KB_EMBED_MODEL=text-embedding-3-small   # openai 模式需要
 # 可选：外部搜索工具
 TAVILY_API_KEY=tvly-xxxxx
 ```
+
+**配置优先级：** 界面配置 > 环境变量。两者可以混用，界面配置会覆盖环境变量。
 
 ### 步骤 3: （可选）启动 ChromaDB（启用 RAG 时）
 

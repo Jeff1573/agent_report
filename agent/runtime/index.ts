@@ -3,10 +3,14 @@
  * 文档说明：可复用的 ReAct Agent 运行时封装。
  * - 负责：模型/工具装载、两种流式模式桥接、交互片段概括（可选）。
  * - 不负责：持久化、可观测平台接入、UI。
+ * 
+ * 配置系统：
+ * - 启动时：宽松验证（lenient），允许环境变量缺失（依赖界面配置兜底）
+ * - 对话时：严格验证（strict），确保合并后配置完整
+ * - 配置优先级：界面配置 > 环境变量
  */
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import { makeChatModel } from '../llm/factory.js';
-import { getActiveModelOverrides } from '../utils/settings-bridge.js';
 import { getDefaultTools } from '../tools/registry.js';
 import { getSystemMessage } from '../config/prompts.js';
 import { logger } from '../utils/logger.js';
@@ -14,6 +18,7 @@ import type { StreamEvent, InteractionSegment, Summarizer, AssistantMessageEvent
 import { observeValues, observeEvents } from '../stream/observer.js';
 import { createCheckpointer, type PersistenceMode } from './persistence.js';
 import { CHECKPOINT_MODE, THREAD_ID_FALLBACK, RECURSION_LIMIT, TOOL_MAX_CALLS, TOOL_TIMEOUT_MS, TOOL_RETRY_ATTEMPTS, validateConfig } from '../config/env.js';
+import { getMergedConfig, validateRuntimeConfig, getConfigSummary } from '../config/merge.js';
 import { defaultSummarizer } from '../stream/summarizers.js';
 import { getMCPTools, cleanupMCPClient, type MultiServerMCPClient } from '../tools/mcp.js';
 import type { AnyTool, ToolCallArgs, LLMResponse, ToolResult, GraphConfig, KBSearchResult, SourceReference, MessageContentPart } from './types.js';
@@ -103,9 +108,10 @@ class SegmentAccumulator {
 
 /** 创建运行时实例 */
 export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<AgentRuntime> {
-  // 启动时验证配置
+  // 启动时使用宽松验证：允许环境变量缺失（依赖界面配置兜底）
   try {
-    validateConfig();
+    validateConfig(undefined, 'lenient');
+    logger.info('配置验证通过（宽松模式）：环境变量可选，将在对话时合并界面配置');
   } catch (error) {
     logger.error('配置验证失败:', error);
     throw error;
@@ -214,22 +220,39 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
   
   // ⭐ 关键：关闭模型级 streaming（避免不完整的"流式函数调用"片段）
   async function buildAgent() {
-    // 动态读取当前激活配置，每次调用前重建 LLM/Agent，确保前端切换即时生效
-    const active = await getActiveModelOverrides().catch(() => undefined);
+    // 动态读取合并配置：优先界面配置，其次环境变量
+    // 每次调用前重建 LLM/Agent，确保界面切换即时生效
+    const mergedResult = await getMergedConfig();
+    const { config: mergedConfig, sources } = mergedResult;
+    
+    // 对话前严格验证：确保合并后配置完整
+    validateRuntimeConfig(mergedConfig);
+    
+    // 记录配置摘要（调试用）
+    const summary = getConfigSummary(mergedResult);
+    logger.debug('使用合并配置构建 Agent:', summary);
+    
+    // 使用合并配置创建 LLM（优先级：合并配置 > 默认值）
     const baseLLM = makeChatModel({
       streaming: false,
       streamUsage: false,
-      ...(active ?? {}),
+      ...mergedConfig,
     });
-    const llm = tools.length > 0 ? baseLLM.bindTools(tools as any, { tool_choice: 'any' }) : baseLLM;
-    logger.info(`LLM configured with ${tools.length} tools, tool_choice: ${tools.length > 0 ? 'any' : 'none'}`);
+    
+    // 智谱 AI 兼容性处理：使用 'auto' 而非 'any'
+    // 'auto' 让模型自行决定是否调用工具，避免强制调用导致的错误
+    const toolChoice = tools.length > 0 ? 'auto' : undefined;
+    const llm = tools.length > 0 ? baseLLM.bindTools(tools as any, { tool_choice: toolChoice }) : baseLLM;
+    logger.info(`LLM configured with ${tools.length} tools, tool_choice: ${toolChoice ?? 'none'}`);
+    
     const agent = createReactAgent({
       llm: llm as any,
       tools: tools as any,
       checkpointSaver: checkpointer as any,
       version: 'v2',
     });
-    return agent
+    
+    return agent;
   }
   
   /**
@@ -254,9 +277,18 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
       { role: 'system', content: getSystemMessage() },
       { role: 'user', content: input }
     ];
-    // 为 runOnce 构建一次使用当前配置的 LLM
-    const active = await getActiveModelOverrides().catch(() => undefined);
-    const baseLLM = makeChatModel({ streaming: false, streamUsage: false, ...(active ?? {}) });
+    
+    // 读取合并配置并验证
+    const mergedResult = await getMergedConfig();
+    validateRuntimeConfig(mergedResult.config);
+    
+    // 使用合并配置构建 LLM
+    const baseLLM = makeChatModel({ 
+      streaming: false, 
+      streamUsage: false, 
+      ...mergedResult.config 
+    });
+    
     const res = await (baseLLM as any).invoke(messagesWithSystem) as LLMResponse;
     const out = res?.content ?? '';
     

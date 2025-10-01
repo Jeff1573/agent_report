@@ -1,4 +1,13 @@
 // src/llm/factory.ts
+/**
+ * LLM 工厂模块
+ * 
+ * 负责创建 ChatOpenAI 实例，支持配置优先级系统：
+ * 1. 函数参数（overrides）- 最高优先级
+ * 2. 环境变量 - 兜底配置
+ * 
+ * 配置来源会记录到日志中，便于调试。
+ */
 import { ChatOpenAI, ChatOpenAIFields } from '@langchain/openai'
 import type { ZodTypeAny } from 'zod'
 import {
@@ -11,6 +20,7 @@ import {
   CUSTOM_AUTH_HEADER,
   CUSTOM_AUTH_VALUE
 } from '../config/env.js'
+import { logger } from '../utils/logger.js'
 
 export type ChatModelOverrides = Partial<{
   model: string
@@ -24,17 +34,50 @@ export type ChatModelOverrides = Partial<{
   apiKey: string
 }>
 
-/** 统一创建 ChatOpenAI（OpenAI 协议兼容） */
+/**
+ * 统一创建 ChatOpenAI 实例（支持 OpenAI 协议兼容端点）
+ * 
+ * 配置优先级：
+ * 1. 函数参数 overrides（最高优先级）- 来自合并配置系统
+ * 2. 环境变量（兜底配置）- 从 env.ts 读取
+ * 
+ * @param {ChatModelOverrides} overrides 配置覆盖项
+ * @returns {ChatOpenAI} ChatOpenAI 实例
+ * 
+ * @example
+ * // 使用合并配置创建
+ * const { config } = await getMergedConfig();
+ * const llm = makeChatModel(config);
+ * 
+ * @example
+ * // 使用环境变量创建（向后兼容）
+ * const llm = makeChatModel();
+ */
 export function makeChatModel(overrides: ChatOpenAIFields & ChatModelOverrides = {}) {
-  // 1) 处理鉴权：优先自定义头；否则走标准 Bearer（OPENAI_API_KEY）
+  // 1) 处理鉴权：优先显式传入的 apiKey；否则走自定义头或环境变量
+  const apiKeySource = (() => {
+    if (typeof (overrides as any).apiKey === 'string' && (overrides as any).apiKey.trim().length > 0) {
+      return 'param';
+    }
+    if (CUSTOM_AUTH_HEADER && CUSTOM_AUTH_VALUE) {
+      return 'custom-header';
+    }
+    if (OPENAI_API_KEY) {
+      return 'env';
+    }
+    return 'missing';
+  })();
+
   const defaultHeaders = (() => {
-    // 覆盖优先：显式传入 apiKey
+    // 优先级 1: 显式传入 apiKey（来自合并配置）
     if (typeof (overrides as any).apiKey === 'string' && (overrides as any).apiKey.trim().length > 0) {
       return { Authorization: `Bearer ${(overrides as any).apiKey}` }
     }
+    // 优先级 2: 自定义认证头（环境变量）
     if (CUSTOM_AUTH_HEADER && CUSTOM_AUTH_VALUE) {
       return { [CUSTOM_AUTH_HEADER]: CUSTOM_AUTH_VALUE }
     }
+    // 优先级 3: 标准 Bearer（环境变量）
     if (OPENAI_API_KEY) {
       return { Authorization: `Bearer ${OPENAI_API_KEY}` }
     }
@@ -44,6 +87,7 @@ export function makeChatModel(overrides: ChatOpenAIFields & ChatModelOverrides =
   // 2) 处理 baseURL（兼容智谱 AI 等非标准端点）
   //    智谱 AI: https://open.bigmodel.cn/api/paas/v4/
   //    注意：智谱 AI 需要在末尾加斜杠
+  const baseURLSource = overrides.baseURL ? 'param' : (OPENAI_BASE_URL ? 'env' : 'default');
   let baseURL = overrides.baseURL ?? OPENAI_BASE_URL
   
   // 确保 baseURL 末尾有斜杠（智谱 AI 要求）
@@ -51,16 +95,52 @@ export function makeChatModel(overrides: ChatOpenAIFields & ChatModelOverrides =
     baseURL = baseURL + '/'
   }
   
-  // 2) 实例化模型（可随时替换 baseURL / model）
+  // 3) 确定最终配置及来源
+  const modelSource = overrides.model ? 'param' : (OPENAI_MODEL ? 'env' : 'missing');
+  const finalModel = overrides.model ?? OPENAI_MODEL;
+  const finalTemperature = overrides.temperature ?? 0;
+  const finalTimeout = overrides.timeout ?? TIMEOUT_MS;
+  const finalMaxRetries = overrides.maxRetries ?? MAX_RETRIES;
+  const finalStreaming = overrides.streaming ?? false;
+  const finalStreamUsage = overrides.streamUsage ?? OPENAI_STREAM_USAGE;
+
+  // 4) 确定最终的 API Key（优先级：参数 > 自定义头 > 环境变量）
+  const finalApiKey = (() => {
+    if (typeof (overrides as any).apiKey === 'string' && (overrides as any).apiKey.trim().length > 0) {
+      return (overrides as any).apiKey;
+    }
+    // 如果使用自定义认证头，不传 apiKey（避免冲突）
+    if (CUSTOM_AUTH_HEADER && CUSTOM_AUTH_VALUE) {
+      return undefined;
+    }
+    // 否则使用环境变量
+    return OPENAI_API_KEY || undefined;
+  })();
+
+  // 记录配置来源（调试用）
+  logger.debug('LLM 配置来源:', {
+    model: `${finalModel} (${modelSource})`,
+    baseURL: `${baseURL || 'default'} (${baseURLSource})`,
+    apiKey: `${apiKeySource}`,
+    hasApiKey: Boolean(finalApiKey),
+    temperature: finalTemperature,
+    timeout: finalTimeout,
+    streaming: finalStreaming,
+  });
+  
+  // 5) 实例化模型（可随时替换 baseURL / model）
+  // 注意：如果使用自定义认证头，apiKey 传 undefined，通过 defaultHeaders 认证
   const llm = new ChatOpenAI({
-    model: overrides.model ?? OPENAI_MODEL,
-    temperature: overrides.temperature ?? 0,
-    timeout: overrides.timeout ?? TIMEOUT_MS,
-    maxRetries: overrides.maxRetries ?? MAX_RETRIES,
+    model: finalModel,
+    temperature: finalTemperature,
+    timeout: finalTimeout,
+    maxRetries: finalMaxRetries,
     // 流式相关配置
-    streaming: overrides.streaming ?? false, // 显式传递 streaming 参数
-    streamUsage: overrides.streamUsage ?? OPENAI_STREAM_USAGE,
-    // 关键：自定义 baseURL / headers 走 configuration
+    streaming: finalStreaming,
+    streamUsage: finalStreamUsage,
+    // 关键：直接传递 apiKey 参数（优先级高于环境变量）
+    ...(finalApiKey ? { apiKey: finalApiKey } : {}),
+    // 自定义 baseURL / headers 走 configuration
     configuration: {
       baseURL,
       defaultHeaders

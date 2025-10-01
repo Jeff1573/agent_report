@@ -187,39 +187,76 @@ export function sanitizeCollectionName(name: string): string {
 }
 
 /**
- * 验证必需的环境配置。
+ * 配置验证模式
+ */
+export type ValidationMode = 'strict' | 'lenient';
+
+/**
+ * 运行时配置接口（用于验证）
+ */
+export interface ValidatableConfig {
+  apiKey?: string;
+  model?: string;
+  baseURL?: string;
+}
+
+/**
+ * 验证配置的完整性
  * 
- * 在应用启动时调用此函数，确保所有必需的环境变量都已正确配置。
- * 如果缺少必需配置，将抛出带有详细说明的错误。
+ * 支持两种模式：
+ * - **strict（严格）**: 要求所有必需配置项都存在（用于对话前验证）
+ * - **lenient（宽松）**: 允许环境变量缺失，依赖界面配置兜底（用于启动时验证）
  * 
- * @throws {Error} 当缺少必需的环境变量时抛出
+ * @param {ValidatableConfig} [config] 要验证的配置对象（可选，默认使用环境变量）
+ * @param {ValidationMode} [mode='strict'] 验证模式
+ * @throws {Error} 当配置不完整时抛出错误
  * 
  * @example
- * // 在应用启动时调用
- * try {
- *   validateConfig();
- *   console.log('配置验证通过');
- * } catch (error) {
- *   console.error('配置错误:', error.message);
- *   process.exit(1);
- * }
+ * // 启动时宽松验证（允许环境变量缺失）
+ * validateConfig(undefined, 'lenient');
+ * 
+ * @example
+ * // 对话前严格验证（确保合并后配置完整）
+ * const mergedConfig = await getMergedConfig();
+ * validateConfig(mergedConfig.config, 'strict');
  */
-export function validateConfig(): void {
+export function validateConfig(
+  config?: ValidatableConfig,
+  mode: ValidationMode = 'strict'
+): void {
   const errors: string[] = [];
+  const isLenient = mode === 'lenient';
+
+  // 确定要验证的配置源
+  const apiKey = config?.apiKey ?? OPENAI_API_KEY;
+  const model = config?.model ?? OPENAI_MODEL;
 
   // 1. LLM 基础配置（必需）
-  if (!OPENAI_API_KEY || OPENAI_API_KEY.trim().length === 0) {
-    errors.push('OPENAI_API_KEY - LLM API 密钥未配置');
+  if (!apiKey || apiKey.trim().length === 0) {
+    if (isLenient) {
+      // 宽松模式：仅警告，不阻止启动
+      errors.push('OPENAI_API_KEY - LLM API 密钥未在环境变量中配置（可通过界面配置）');
+    } else {
+      // 严格模式：必须存在
+      errors.push('OPENAI_API_KEY - LLM API 密钥未配置');
+    }
   }
-  if (!OPENAI_MODEL || OPENAI_MODEL.trim().length === 0) {
-    errors.push('OPENAI_MODEL - LLM 模型名称未配置（如: gpt-4, deepseek-chat）');
+
+  if (!model || model.trim().length === 0) {
+    if (isLenient) {
+      // 宽松模式：仅警告，不阻止启动
+      errors.push('OPENAI_MODEL - LLM 模型名称未在环境变量中配置（可通过界面配置）');
+    } else {
+      // 严格模式：必须存在
+      errors.push('OPENAI_MODEL - LLM 模型名称未配置（如: gpt-4, deepseek-chat）');
+    }
   }
 
   // 2. RAG 相关配置改为可选：
   //    若未完成配置，将不会启用 kb_search 工具，不阻断应用启动。
   //    如需启用 RAG，请确保 CHROMA_URL / KB_COLLECTION / 嵌入配置完整。
 
-  // 5. Postgres Checkpointer 配置（可选，但若使用则必需）
+  // 3. Postgres Checkpointer 配置（可选，但若使用则必需）
   if (CHECKPOINT_MODE === 'postgres') {
     if (!CHECKPOINT_POSTGRES_URL || CHECKPOINT_POSTGRES_URL.trim().length === 0) {
       errors.push('CHECKPOINT_POSTGRES_URL - 使用 Postgres 持久化需要配置数据库连接 URL');
@@ -228,14 +265,30 @@ export function validateConfig(): void {
 
   // 抛出详细的配置错误
   if (errors.length > 0) {
+    // 根据模式调整错误消息
+    const modeHint = isLenient 
+      ? '\n💡 提示：环境变量未配置，但可以通过界面设置配置。如果两者都未配置，启动后首次对话将失败。'
+      : '\n💡 请检查 .env 文件、环境变量或界面设置';
+
     const errorMessage = [
-      '❌ 配置验证失败，缺少以下必需的环境变量：\n',
+      `❌ 配置验证失败（${mode === 'strict' ? '严格模式' : '宽松模式'}），缺少以下配置：\n`,
       ...errors.map((err, i) => `  ${i + 1}. ${err}`),
-      '\n💡 请检查 .env 文件或环境变量配置',
-      '📝 参考 .env.example 或文档了解配置说明'
+      modeHint,
+      '\n📝 参考 desktop/ENV_CONFIG.md 了解配置说明'
     ].join('\n');
     
-    throw new Error(errorMessage);
+    // 宽松模式下，只有严格错误才抛出异常（目前只有 postgres 配置）
+    if (isLenient) {
+      const hasStrictError = errors.some(err => err.includes('POSTGRES'));
+      if (hasStrictError) {
+        throw new Error(errorMessage);
+      }
+      // 其他情况只警告，不抛出
+      console.warn(errorMessage);
+    } else {
+      // 严格模式：任何错误都抛出
+      throw new Error(errorMessage);
+    }
   }
 }
 

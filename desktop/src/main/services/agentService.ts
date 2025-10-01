@@ -39,13 +39,20 @@ async function getRuntime(): Promise<AgentRuntime> {
   try {
     console.log('[AgentService] 正在初始化 Agent Runtime...')
     
+    // 【关键】设置用户数据目录环境变量，用于读取界面配置
+    const { app } = require('electron')
+    const path = require('path')
+    const fs = require('fs')
+    
+    // 设置 MF_USER_DATA_DIR 指向 Electron 用户数据目录
+    // 界面配置文件存储在: {userData}/settings.json
+    const userDataPath = app.getPath('userData')
+    process.env.MF_USER_DATA_DIR = userDataPath
+    console.log('[AgentService] 用户数据目录:', userDataPath)
+    
     // 配置 Agent 环境变量路径（如果 .env 在 agent 目录）
     // 注意：建议将 .env 放在项目根目录以简化配置
     if (!process.env.DOTENV_CONFIG_PATH) {
-      const { app } = require('electron')
-      const path = require('path')
-      const fs = require('fs')
-      
       // 尝试查找 .env 文件的可能位置
       const possiblePaths = [
         path.resolve(process.cwd(), '.env'),                    // 根目录
@@ -63,7 +70,7 @@ async function getRuntime(): Promise<AgentRuntime> {
       }
       
       if (!process.env.DOTENV_CONFIG_PATH) {
-        console.warn('[AgentService] 未找到 .env 文件，请确保配置环境变量')
+        console.warn('[AgentService] 未找到 .env 文件，可通过界面设置配置模型')
       }
     }
     
