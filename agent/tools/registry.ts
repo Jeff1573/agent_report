@@ -1,11 +1,10 @@
 // agent/tools/registry.ts
 /**
  * 文档说明（工具注册器）：
- * - 统一导出默认可用的工具集合，包含内部知识库、Tavily搜索和MCP服务器工具。
+ * - 统一导出默认可用的工具集合，包含内部知识库和MCP服务器工具。
  * - 参考：LangGraph 预构建 ReAct Agent 通过 `createReactAgent({ llm, tools })` 装载工具。
  *   （证据：LangGraph JS How-to "Create a ReAct Agent" 示例）
  */
-import { tavilyTool, makeTavily } from './tavily.js';
 import { kbSearchTool } from './kb.js';
 import { getMCPTools } from './mcp.js';
 import { logger } from '../utils/logger.js';
@@ -32,7 +31,7 @@ enum ToolLoadStrategy {
  * - 如果所有工具都加载失败，返回空数组（Agent 将无工具可用）
  * - 配置错误应在 validateConfig() 中提前检查
  * 
- * 优先级：内部知识库 > 外部搜索（不包含MCP工具，MCP工具由运行时单独管理）
+ * 优先级：内部知识库优先（不包含MCP工具，MCP工具由运行时单独管理）
  */
 export async function getDefaultTools(): Promise<AnyTool[]> {
   const tools: AnyTool[] = [];
@@ -50,16 +49,6 @@ export async function getDefaultTools(): Promise<AnyTool[]> {
     }
   } else {
     logger.info('RAG not configured; skip registering kb_search tool');
-  }
-
-  // 2. 外部搜索工具（可选工具，兜底）
-  try {
-    tools.push(tavilyTool);
-    logger.info('Loaded tavily tool');
-  } catch (error) {
-    const errorMsg = `tavily: ${error}`;
-    loadErrors.push({ tool: 'tavily', error: errorMsg, strategy: ToolLoadStrategy.OPTIONAL });
-    logger.warn(`[Optional Tool] ${errorMsg}`);
   }
 
   // 汇总加载结果
@@ -81,8 +70,7 @@ export async function getDefaultTools(): Promise<AnyTool[]> {
  * 用于需要立即获取工具但不包含MCP的情况。
  */
 export function createTools(): AnyTool[] {
-  // 预留：可在此处基于环境变量切换不同搜索供应商
-  return [kbSearchTool, makeTavily()];
+  return [kbSearchTool];
 }
 
 /**
@@ -92,5 +80,3 @@ export function createTools(): AnyTool[] {
 export async function getAllTools(): Promise<AnyTool[]> {
   return getDefaultTools();
 }
-
-export { tavilyTool, makeTavily };

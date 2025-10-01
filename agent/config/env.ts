@@ -70,9 +70,6 @@ export const TOOL_TIMEOUT_MS = Number(process.env.TOOL_TIMEOUT_MS || 45000);
 // - TOOL_RETRY_ATTEMPTS: 工具调用失败时的重试次数
 export const TOOL_RETRY_ATTEMPTS = Number(process.env.TOOL_RETRY_ATTEMPTS || 5);
 
-// Tavily API Key（搜索工具）
-export const TAVILY_API_KEY = process.env.TAVILY_API_KEY || '';
-
 // RAG 向量嵌入配置
 export const KB_EMBED_PROVIDER = (process.env.KB_EMBED_PROVIDER || 'openai').toLowerCase();
 export const KB_EMBED_MODEL = process.env.KB_EMBED_MODEL || '';

@@ -127,7 +127,7 @@ export async function createAgentRuntime(config: RuntimeConfig = {}): Promise<Ag
   /**
    * MCP 工具调用包装器：添加调用次数限制、超时和重试机制。
    * 
-   * 注意：此包装器仅用于 MCP 工具，不应用于内置工具（kb_search、tavily等）。
+   * 注意：此包装器仅用于 MCP 工具，不应用于内置工具（kb_search等）。
    * 
    * @param tool MCP 工具实例
    * @returns 包装后的工具实例

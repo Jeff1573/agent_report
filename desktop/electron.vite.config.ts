@@ -24,7 +24,6 @@ export default defineConfig({
           '@langchain/community',
           '@langchain/openai',
           '@langchain/google-genai',
-          '@langchain/tavily',
           '@langchain/mcp-adapters',
           'langchain',
           'chromadb',

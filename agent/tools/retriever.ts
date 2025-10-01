@@ -3,7 +3,7 @@
  * 文档说明（内部检索 Tool 工厂）：
  * - 目标：将向量库的 `.asRetriever()` 产物通过 `createRetrieverTool(...)` 一键封装为可被代理调用的 Tool。
  * - 适用：最小可行 PoC，使用 `MemoryVectorStore` + `OpenAIEmbeddings`，零外部存储依赖。
- * - 集成：在运行时通过 `createAgentRuntime({ tools: [...] })` 将本工具与现有搜索工具（如 Tavily）并列注入。
+ * - 集成：在运行时通过 `createAgentRuntime({ tools: [...] })` 将本工具注入到代理中。
  *
  * 关键 API 依据（LangChain.js v0.3）：
  * - createRetrieverTool：langchain/tools/retriever → 传入 retriever 与 { name, description }。
