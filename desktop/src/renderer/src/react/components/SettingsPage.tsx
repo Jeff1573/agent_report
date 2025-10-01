@@ -126,20 +126,10 @@ export const SettingsPage: React.FC = () => {
     return false
   }
 
-  const onOpenMcpConfig = async (): Promise<void> => {
+  const onOpenAppDataFile = async (filename: string, displayName: string): Promise<void> => {
     try {
-      await window.api.settings.openMcpConfig()
-      message.success('已在默认编辑器中打开 MCP 配置文件')
-    } catch (e) {
-      const errorMsg = e instanceof Error ? e.message : '打开失败'
-      message.error(errorMsg)
-    }
-  }
-
-  const onOpenConfig = async (): Promise<void> => {
-    try {
-      await window.api.settings.openConfig()
-      message.success('已在默认编辑器中打开设置配置文件')
+      await window.api.settings.openAppDataFile(filename)
+      message.success(`已在默认编辑器中打开 ${displayName}`)
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : '打开失败'
       message.error(errorMsg)
@@ -249,10 +239,10 @@ export const SettingsPage: React.FC = () => {
             点击下方按钮在系统默认编辑器中打开配置文件。
           </Text>
           <Space>
-            <Button icon={<SettingOutlined />} onClick={onOpenConfig}>
+            <Button icon={<SettingOutlined />} onClick={() => onOpenAppDataFile('settings.json', '设置文件')}>
               打开设置文件
             </Button>
-            <Button icon={<SettingOutlined />} onClick={onOpenMcpConfig}>
+            <Button icon={<SettingOutlined />} onClick={() => onOpenAppDataFile('mcp.json', 'MCP 配置文件')}>
               打开 MCP 配置文件
             </Button>
           </Space>

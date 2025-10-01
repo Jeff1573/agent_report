@@ -220,11 +220,8 @@ app.whenReady().then(() => {
   ipcMain.handle(IPC_CHANNELS.SETTINGS_IMPORT, async (_event, json: string) => {
     await settingsService.importSettings(json)
   })
-  ipcMain.handle(IPC_CHANNELS.SETTINGS_OPEN_MCP_CONFIG, async () => {
-    return settingsService.openMcpConfig()
-  })
-  ipcMain.handle(IPC_CHANNELS.SETTINGS_OPEN_CONFIG, async () => {
-    return settingsService.openConfig()
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_OPEN_APP_DATA_FILE, async (_event, filename: string) => {
+    return settingsService.openAppDataFile(filename)
   })
 
   createWindow()

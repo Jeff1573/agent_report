@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { IPC_CHANNELS, type PreloadApi, type AgentStreamEvent } from '../shared/ipc'
 
@@ -14,7 +14,7 @@ const api: PreloadApi = {
       const callbackChannel = `${IPC_CHANNELS.AGENT_CHAT_STREAM}-callback-${Date.now()}`
       
       // 注册事件监听器
-      const handler = (_event: Electron.IpcRendererEvent, event: AgentStreamEvent) => {
+      const handler = (_event: IpcRendererEvent, event: AgentStreamEvent) => {
         onEvent(event)
       }
       ipcRenderer.on(callbackChannel, handler)
@@ -44,8 +44,7 @@ const api: PreloadApi = {
     validateStreaming: (modelId) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_MODEL_VALIDATE_STREAMING, modelId),
     exportSettings: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_EXPORT),
     importSettings: (json) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_IMPORT, json),
-    openMcpConfig: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_OPEN_MCP_CONFIG),
-    openConfig: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_OPEN_CONFIG)
+    openAppDataFile: (filename) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_OPEN_APP_DATA_FILE, filename)
   }
 }
 

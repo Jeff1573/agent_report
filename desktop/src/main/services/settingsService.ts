@@ -294,16 +294,37 @@ export async function validateModelStreaming(modelId: string): Promise<Streaming
 }
 
 /**
- * 在系统默认编辑器中打开设置配置文件
+ * 在系统默认编辑器中打开 appData 目录下的文件
+ * 
+ * @param filename 文件名（如 'settings.json', 'mcp.json'）
  */
-export async function openConfig(): Promise<void> {
+export async function openAppDataFile(filename: string): Promise<void> {
   try {
-    const settingsPath = getSettingsPath()
-    await shell.openPath(settingsPath)
-    console.log(`[SettingsService] 已在默认编辑器中打开设置文件: ${settingsPath}`)
+    // 安全验证：防止路径遍历攻击
+    if (!filename || filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+      throw new Error('无效的文件名')
+    }
+    
+    // 限制文件扩展名
+    const allowedExtensions = ['.json', '.txt', '.log', '.md']
+    const hasValidExtension = allowedExtensions.some(ext => filename.endsWith(ext))
+    if (!hasValidExtension) {
+      throw new Error('不支持的文件类型，仅支持: ' + allowedExtensions.join(', '))
+    }
+    
+    const userDataPath = app.getPath('userData')
+    const filePath = path.join(userDataPath, filename)
+    
+    // 检查文件是否存在
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`文件不存在: ${filename}`)
+    }
+    
+    await shell.openPath(filePath)
+    console.log(`[SettingsService] 已在默认编辑器中打开文件: ${filePath}`)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    console.error(`[SettingsService] 打开设置文件失败:`, errorMsg)
-    throw new Error(`打开设置文件失败: ${errorMsg}`)
+    console.error(`[SettingsService] 打开文件失败:`, errorMsg)
+    throw new Error(`打开文件失败: ${errorMsg}`)
   }
 }

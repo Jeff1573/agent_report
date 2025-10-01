@@ -25,9 +25,7 @@ export const IPC_CHANNELS = {
   SETTINGS_MODEL_VALIDATE_STREAMING: 'settings/model/validateStreaming',
   SETTINGS_EXPORT: 'settings/export',
   SETTINGS_IMPORT: 'settings/import',
-  SETTINGS_OPEN_CONFIG: 'settings/openConfig',
-  // MCP 配置相关
-  SETTINGS_OPEN_MCP_CONFIG: 'settings/openMcpConfig'
+  SETTINGS_OPEN_APP_DATA_FILE: 'settings/openAppDataFile'
 } as const
 
 /** 流式事件类型 */
@@ -168,10 +166,8 @@ export interface PreloadApi {
     exportSettings: () => Promise<string>
     /** 导入设置（JSON 字符串） */
     importSettings: (json: string) => Promise<void>
-    /** 在系统默认编辑器中打开 MCP 配置文件 */
-    openMcpConfig: () => Promise<void>
-    /** 在系统默认编辑器中打开设置配置文件 */
-    openConfig: () => Promise<void>
+    /** 在系统默认编辑器中打开 appData 目录下的文件 */
+    openAppDataFile: (filename: string) => Promise<void>
   }
 }
 
