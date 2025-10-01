@@ -41,6 +41,16 @@ export function makeChatModel(overrides: ChatOpenAIFields & ChatModelOverrides =
     return {}
   })()
 
+  // 2) 处理 baseURL（兼容智谱 AI 等非标准端点）
+  //    智谱 AI: https://open.bigmodel.cn/api/paas/v4/
+  //    注意：智谱 AI 需要在末尾加斜杠
+  let baseURL = overrides.baseURL ?? OPENAI_BASE_URL
+  
+  // 确保 baseURL 末尾有斜杠（智谱 AI 要求）
+  if (baseURL && !baseURL.endsWith('/')) {
+    baseURL = baseURL + '/'
+  }
+  
   // 2) 实例化模型（可随时替换 baseURL / model）
   const llm = new ChatOpenAI({
     model: overrides.model ?? OPENAI_MODEL,
@@ -49,10 +59,10 @@ export function makeChatModel(overrides: ChatOpenAIFields & ChatModelOverrides =
     maxRetries: overrides.maxRetries ?? MAX_RETRIES,
     // 流式相关配置
     streaming: overrides.streaming ?? false, // 显式传递 streaming 参数
-    streamUsage: overrides.streamUsage ?? false,
+    streamUsage: overrides.streamUsage ?? OPENAI_STREAM_USAGE,
     // 关键：自定义 baseURL / headers 走 configuration
     configuration: {
-      baseURL: overrides.baseURL ?? OPENAI_BASE_URL,
+      baseURL,
       defaultHeaders
     }
   })

@@ -30,7 +30,11 @@ dotenv.config({
  */
 
 // 1) OpenAI 兼容配置（必填项请在 .env 中提供）
-export const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL; // 你的网关 /v1 即可
+// baseURL 说明：
+// - 标准 OpenAI: https://api.openai.com/v1
+// - 智谱 AI (GLM): https://open.bigmodel.cn/api/paas/v4
+// - 其他兼容端点: 根据提供商文档配置，LangChain 会自动添加 /chat/completions
+export const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL;
 export const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 export const OPENAI_MODEL = process.env.OPENAI_MODEL || '';
 
