@@ -26,8 +26,8 @@ export const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content }) => 
         rehypePlugins={[rehypeHighlight, rehypeRaw]}
         components={{
           // 自定义渲染组件
-          code: ({ node, inline, className, children, ...props }) => {
-            const match = /language-(\w+)/.exec(className || '')
+          code: ({ inline, className, children, ...props }: { inline?: boolean; className?: string; children?: React.ReactNode }) => {
+            //  const match = /language-(\w+)/.exec(className || '')
             return !inline ? (
               <pre className="markdown-code-block">
                 <code
@@ -47,7 +47,7 @@ export const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content }) => 
             )
           },
           // 链接在新标签页打开
-          a: ({ node, children, href, ...props }) => (
+          a: ({ children, href, ...props }) => (
             <a
               href={href}
               target="_blank"
@@ -59,7 +59,7 @@ export const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content }) => 
             </a>
           ),
           // 表格样式
-          table: ({ node, children, ...props }) => (
+          table: ({ children, ...props }) => (
             <div className="markdown-table-container">
               <table
                 className="markdown-table"
@@ -69,7 +69,7 @@ export const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content }) => 
               </table>
             </div>
           ),
-          th: ({ node, children, ...props }) => (
+          th: ({ children, ...props }) => (
             <th
               className="markdown-th"
               {...props}
@@ -77,7 +77,7 @@ export const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content }) => 
               {children}
             </th>
           ),
-          td: ({ node, children, ...props }) => (
+          td: ({ children, ...props }) => (
             <td
               className="markdown-td"
               {...props}
@@ -86,7 +86,7 @@ export const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content }) => 
             </td>
           ),
           // 引用块样式
-          blockquote: ({ node, children, ...props }) => (
+          blockquote: ({ children, ...props }) => (
             <blockquote
               className="markdown-blockquote"
               {...props}
@@ -95,34 +95,34 @@ export const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content }) => 
             </blockquote>
           ),
           // 列表样式
-          ul: ({ node, children, ...props }) => (
+          ul: ({ children, ...props }) => (
             <ul className="markdown-ul" {...props}>
               {children}
             </ul>
           ),
-          ol: ({ node, children, ...props }) => (
+              ol: ({ children, ...props }) => (
             <ol className="markdown-ol" {...props}>
               {children}
             </ol>
           ),
           // 段落样式
-          p: ({ node, children, ...props }) => (
+          p: ({ children, ...props }) => (
             <p className="markdown-p" {...props}>
               {children}
             </p>
           ),
           // 标题样式
-          h1: ({ node, children, ...props }) => (
+          h1: ({ children, ...props }) => (
             <h1 className="markdown-h1" {...props}>
               {children}
             </h1>
           ),
-          h2: ({ node, children, ...props }) => (
+          h2: ({ children, ...props }) => (
             <h2 className="markdown-h2" {...props}>
               {children}
             </h2>
           ),
-          h3: ({ node, children, ...props }) => (
+          h3: ({ children, ...props }) => (
             <h3 className="markdown-h3" {...props}>
               {children}
             </h3>

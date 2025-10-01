@@ -8,7 +8,7 @@
  */
 
 import React, { useState, useEffect } from 'react'
-import { Drawer, List, Button, Space, Typography, Tag, Empty, Popconfirm, message, Divider } from 'antd'
+import { Drawer, List, Button, Space, Typography, Tag, Empty, Popconfirm, message } from 'antd'
 import { HistoryOutlined, DeleteOutlined, MessageOutlined, ClockCircleOutlined } from '@ant-design/icons'
 import type { SessionData } from '../../../../shared/ipc'
 
@@ -18,7 +18,7 @@ interface HistorySidebarProps {
   visible: boolean
   onClose: () => void
   currentSessionId: string
-  onLoadSession: (session: SessionData) => void
+  onLoadSession: (_session: SessionData) => void
 }
 
 export const HistorySidebar: React.FC<HistorySidebarProps> = ({
