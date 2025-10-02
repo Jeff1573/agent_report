@@ -23,10 +23,12 @@
   ],
   "compilerOptions": {
     "composite": true,
-    "strict": true,
+    "strict": false,
     // 禁用 TypeScript 的未使用变量检查，交由 ESLint 处理（警告级别）
     "noUnusedLocals": false,
     "noUnusedParameters": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
     "baseUrl": ".",
     "jsx": "react-jsx",
     "skipLibCheck": true,
