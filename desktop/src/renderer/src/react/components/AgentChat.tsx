@@ -68,6 +68,8 @@ export const AgentChat: React.FC = () => {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [currentContent, setCurrentContent] = useState('')
+  // 保留用于兼容旧版本消息格式
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [currentToolCalls, setCurrentToolCalls] = useState<Array<{ name: string; args: unknown; thinking?: string }>>([])
   const [currentStage, setCurrentStage] = useState<'decision' | 'execution' | 'answer' | undefined>(undefined)
   // 新增：当前执行步骤列表
@@ -192,6 +194,36 @@ export const AgentChat: React.FC = () => {
       console.error('Chat error:', error)
       antMessage.error(`发送失败: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
+      // 🆕 流式结束后，保存最终的助手消息（包含所有执行步骤）
+      setCurrentContent(prevContent => {
+        setCurrentToolCalls(prevToolCalls => {
+          setCurrentExecutionSteps(prevSteps => {
+            if (prevContent || prevSteps.length > 0) {
+              const finalSteps = prevContent ? [...prevSteps, {
+                id: `step-${Date.now()}-answer`,
+                type: 'answer' as const,
+                stage: 'answer' as const,
+                content: prevContent,
+                timestamp: Date.now(),
+                status: 'completed' as const
+              }] : prevSteps
+
+              setMessages(prevMsgs => [...prevMsgs, {
+                id: Date.now().toString(),
+                role: 'assistant',
+                content: prevContent,
+                timestamp: Date.now(),
+                toolCalls: prevToolCalls.length > 0 ? [...prevToolCalls] : undefined,
+                executionSteps: finalSteps.length > 0 ? finalSteps : undefined
+              }])
+            }
+            return []
+          })
+          return []
+        })
+        return ''
+      })
+      setCurrentStage(undefined)
       setIsLoading(false)
     }
   }
@@ -284,36 +316,9 @@ export const AgentChat: React.FC = () => {
         break
 
       case 'round-end':
-        // 🆕 添加最终回答步骤
-        setCurrentContent(prevContent => {
-          if (prevContent) {
-            setCurrentExecutionSteps(prev => {
-              const stepsWithAnswer = [...prev, {
-                id: `step-${Date.now()}-answer`,
-                type: 'answer' as const,
-                stage: 'answer' as const,
-                content: prevContent,
-                timestamp: Date.now(),
-                status: 'completed' as const
-              }]
-              
-              // 保存消息（包含执行步骤）
-              setMessages(prevMsgs => [...prevMsgs, {
-                id: Date.now().toString(),
-                role: 'assistant',
-                content: prevContent,
-                timestamp: Date.now(),
-                toolCalls: currentToolCalls.length > 0 ? [...currentToolCalls] : undefined,
-                executionSteps: stepsWithAnswer.length > 0 ? stepsWithAnswer : undefined
-              }])
-              
-              return []  // 清空步骤列表
-            })
-          }
-          return '' // 清空当前内容
-        })
-        setCurrentToolCalls([]) // 清空工具调用
-        setCurrentStage(undefined) // 清空阶段
+        // 🆕 每轮结束时，不再立即保存消息，只是标记阶段
+        // 消息将在整个流式对话结束后统一保存（在 handleSend 的 finally 块中）
+        console.log('[AgentChat] round-end 事件：当前步骤数', currentExecutionSteps.length)
         break
 
       case 'error':

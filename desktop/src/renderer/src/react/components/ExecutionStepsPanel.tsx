@@ -4,18 +4,16 @@
  * 功能：
  * - 以可折叠面板形式展示 Agent 的执行步骤
  * - 支持思考、工具调用、工具结果、最终回答等步骤类型
- * - 提供清晰的视觉层次和交互体验
+ * - 使用 Steps 组件显示步骤流程，每个步骤可单独折叠
  */
 
-import React from 'react'
-import { Collapse, Tag, Space, Typography } from 'antd'
+import React, { useState } from 'react'
+import { Collapse, Tag, Space, Typography, Steps } from 'antd'
 import { 
-  ThunderboltOutlined, 
-  ToolOutlined, 
-  CheckCircleOutlined, 
-  MessageOutlined,
-  BulbOutlined,
-  LoadingOutlined
+  ThunderboltOutlined,
+  LoadingOutlined,
+  DownOutlined,
+  RightOutlined
 } from '@ant-design/icons'
 import type { CollapseProps } from 'antd'
 
@@ -42,40 +40,30 @@ interface ExecutionStepsPanelProps {
 }
 
 /**
- * 获取步骤图标
+ * 获取步骤标题（显示工具名或步骤类型）
  */
-const getStepIcon = (step: ExecutionStep): React.ReactNode => {
-  if (step.status === 'running') {
-    return <LoadingOutlined style={{ color: '#1890ff' }} />
+const getStepTitle = (step: ExecutionStep): string => {
+  if (step.toolName) {
+    return step.toolName
   }
-
-  switch (step.type) {
-    case 'thinking':
-      return <BulbOutlined style={{ color: '#faad14' }} />
-    case 'tool-call':
-      return <ToolOutlined style={{ color: '#1890ff' }} />
-    case 'tool-result':
-      return <CheckCircleOutlined style={{ color: '#52c41a' }} />
-    case 'answer':
-      return <MessageOutlined style={{ color: '#722ed1' }} />
-    default:
-      return <ThunderboltOutlined />
+  
+  const titleMap = {
+    thinking: '思考分析',
+    'tool-call': '工具调用',
+    'tool-result': '执行结果',
+    answer: '生成回答'
   }
+  
+  return titleMap[step.type] || '执行步骤'
 }
 
 /**
- * 获取步骤类型标签
+ * 获取步骤状态
  */
-const getStepTypeTag = (step: ExecutionStep): React.ReactNode => {
-  const typeMap = {
-    thinking: { text: '思考', color: 'gold' },
-    'tool-call': { text: '工具调用', color: 'blue' },
-    'tool-result': { text: '工具结果', color: 'green' },
-    answer: { text: '生成回答', color: 'purple' }
-  }
-
-  const config = typeMap[step.type]
-  return <Tag color={config.color}>{config.text}</Tag>
+const getStepStatus = (step: ExecutionStep): 'wait' | 'process' | 'finish' | 'error' => {
+  if (step.status === 'running') return 'process'
+  if (step.status === 'error') return 'error'
+  return 'finish'
 }
 
 /**
@@ -94,57 +82,96 @@ const formatJson = (data: unknown, maxLength = 500): string => {
 }
 
 /**
- * 渲染步骤内容
+ * 单个步骤组件（可折叠）
  */
-const renderStepContent = (step: ExecutionStep): React.ReactNode => {
+const StepItem: React.FC<{ step: ExecutionStep; index: number }> = ({ step }) => {
+  const [expanded, setExpanded] = useState(false)
+  
+  const hasDetails = (step.type === 'tool-call' && step.toolArgs) || 
+                     (step.type === 'tool-result' && step.toolResult) ||
+                     (step.type === 'thinking' && step.content)
+
   return (
-    <div style={{ padding: '8px 0' }}>
-      {/* 基础内容 */}
-      <Paragraph style={{ marginBottom: 8 }}>
-        <Text>{step.content}</Text>
-      </Paragraph>
+    <div style={{ marginBottom: '12px' }}>
+      {/* 步骤标题 - 可点击展开 */}
+      <div 
+        onClick={() => hasDetails && setExpanded(!expanded)}
+        style={{ 
+          cursor: hasDetails ? 'pointer' : 'default',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '4px 0'
+        }}
+      >
+        {hasDetails && (
+          expanded ? <DownOutlined style={{ fontSize: '12px', color: '#999' }} /> 
+                   : <RightOutlined style={{ fontSize: '12px', color: '#999' }} />
+        )}
+        <Text strong style={{ fontSize: '14px' }}>
+          {getStepTitle(step)}
+        </Text>
+        {step.status === 'running' && <LoadingOutlined style={{ color: '#1890ff' }} />}
+      </div>
 
-      {/* 工具调用参数 */}
-      {step.type === 'tool-call' && step.toolArgs && (
-        <div style={{ marginTop: 8 }}>
-          <Text type="secondary" style={{ fontSize: '12px' }}>参数：</Text>
-          <pre style={{ 
-            background: '#f5f5f5', 
-            padding: '8px', 
-            borderRadius: '4px',
-            fontSize: '12px',
-            maxHeight: '200px',
-            overflow: 'auto',
-            margin: '4px 0 0 0'
-          }}>
-            {formatJson(step.toolArgs)}
-          </pre>
+      {/* 步骤详细内容（折叠） */}
+      {expanded && hasDetails && (
+        <div style={{ 
+          marginTop: '8px', 
+          marginLeft: hasDetails ? '20px' : '0',
+          paddingLeft: '12px',
+          borderLeft: '2px solid #e8e8e8'
+        }}>
+          {/* 思考内容 */}
+          {step.type === 'thinking' && step.content && (
+            <Paragraph style={{ marginBottom: 8, fontSize: '13px' }}>
+              <Text type="secondary">{step.content}</Text>
+            </Paragraph>
+          )}
+
+          {/* 工具调用参数 */}
+          {step.type === 'tool-call' && step.toolArgs && (
+            <div style={{ marginTop: 8 }}>
+              <Text type="secondary" style={{ fontSize: '12px' }}>调用参数：</Text>
+              <pre style={{ 
+                background: '#f5f5f5', 
+                padding: '8px', 
+                borderRadius: '4px',
+                fontSize: '12px',
+                maxHeight: '200px',
+                overflow: 'auto',
+                margin: '4px 0 0 0'
+              }}>
+                {formatJson(step.toolArgs)}
+              </pre>
+            </div>
+          )}
+
+          {/* 工具返回结果 */}
+          {step.type === 'tool-result' && step.toolResult && (
+            <div style={{ marginTop: 8 }}>
+              <Text type="secondary" style={{ fontSize: '12px' }}>返回结果：</Text>
+              <pre style={{ 
+                background: '#f0f9ff', 
+                padding: '8px', 
+                borderRadius: '4px',
+                fontSize: '12px',
+                maxHeight: '300px',
+                overflow: 'auto',
+                margin: '4px 0 0 0',
+                border: '1px solid #e6f4ff'
+              }}>
+                {formatJson(step.toolResult, 1000)}
+              </pre>
+            </div>
+          )}
+
+          {/* 时间戳 */}
+          <Text type="secondary" style={{ fontSize: '11px', marginTop: '8px', display: 'block' }}>
+            {new Date(step.timestamp).toLocaleTimeString('zh-CN')}
+          </Text>
         </div>
       )}
-
-      {/* 工具返回结果 */}
-      {step.type === 'tool-result' && step.toolResult && (
-        <div style={{ marginTop: 8 }}>
-          <Text type="secondary" style={{ fontSize: '12px' }}>返回结果：</Text>
-          <pre style={{ 
-            background: '#f0f9ff', 
-            padding: '8px', 
-            borderRadius: '4px',
-            fontSize: '12px',
-            maxHeight: '300px',
-            overflow: 'auto',
-            margin: '4px 0 0 0',
-            border: '1px solid #e6f4ff'
-          }}>
-            {formatJson(step.toolResult, 1000)}
-          </pre>
-        </div>
-      )}
-
-      {/* 时间戳 */}
-      <Text type="secondary" style={{ fontSize: '11px', marginTop: '8px', display: 'block' }}>
-        {new Date(step.timestamp).toLocaleTimeString('zh-CN')}
-      </Text>
     </div>
   )
 }
@@ -160,6 +187,15 @@ export const ExecutionStepsPanel: React.FC<ExecutionStepsPanelProps> = ({
     return null
   }
 
+  // 构建 Steps 配置
+  const stepItems = steps.map((step, index) => ({
+    title: getStepTitle(step),
+    status: getStepStatus(step),
+    description: (
+      <StepItem step={step} index={index} />
+    )
+  }))
+
   // 构建折叠面板项
   const items: CollapseProps['items'] = [{
     key: 'steps',
@@ -171,30 +207,12 @@ export const ExecutionStepsPanel: React.FC<ExecutionStepsPanelProps> = ({
       </Space>
     ),
     children: (
-      <div style={{ paddingLeft: '8px' }}>
-        {steps.map((step, index) => (
-          <div 
-            key={step.id} 
-            style={{ 
-              marginBottom: index < steps.length - 1 ? '16px' : '0',
-              paddingBottom: index < steps.length - 1 ? '16px' : '0',
-              borderBottom: index < steps.length - 1 ? '1px dashed #e8e8e8' : 'none'
-            }}
-          >
-            {/* 步骤头部 */}
-            <Space style={{ marginBottom: '8px' }}>
-              <Tag color="default" style={{ fontSize: '11px' }}>步骤 {index + 1}</Tag>
-              {getStepIcon(step)}
-              {getStepTypeTag(step)}
-              {step.toolName && (
-                <Tag color="cyan" style={{ fontSize: '11px' }}>{step.toolName}</Tag>
-              )}
-            </Space>
-
-            {/* 步骤内容 */}
-            {renderStepContent(step)}
-          </div>
-        ))}
+      <div style={{ paddingTop: '8px' }}>
+        <Steps
+          direction="vertical"
+          size="small"
+          items={stepItems}
+        />
       </div>
     )
   }]
