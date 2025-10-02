@@ -13,6 +13,7 @@ import { SendOutlined, StopOutlined, RobotOutlined, UserOutlined, ToolOutlined, 
 import type { AgentStreamEvent, SessionData } from '../../../../shared/ipc'
 import { MarkdownMessage } from './MarkdownMessage'
 import { HistorySidebar } from './HistorySidebar'
+import { ExecutionStepsPanel } from './ExecutionStepsPanel'
 import '../../assets/chat-animations.css'
 import { useNavigate } from 'react-router-dom'
 import type { ModelConfig } from '../../../../shared/ipc'
@@ -20,6 +21,24 @@ import type { ModelConfig } from '../../../../shared/ipc'
 const { TextArea } = Input
 const { Text } = Typography
 
+/**
+ * 执行步骤类型
+ */
+interface ExecutionStep {
+  id: string
+  type: 'thinking' | 'tool-call' | 'tool-result' | 'answer'
+  stage?: 'decision' | 'execution' | 'answer'
+  content: string
+  timestamp: number
+  toolName?: string
+  toolArgs?: unknown
+  toolResult?: unknown
+  status?: 'running' | 'completed' | 'error'
+}
+
+/**
+ * 消息接口
+ */
 interface Message {
   id: string
   role: 'user' | 'assistant'
@@ -28,8 +47,9 @@ interface Message {
   toolCalls?: Array<{ 
     name: string
     args: unknown
-    thinking?: string  // LLM 的思考过程
+    thinking?: string  // LLM 的思考过程（兼容旧版）
   }>
+  executionSteps?: ExecutionStep[]  // 新版：完整的执行步骤
 }
 
 // 生成会话标题（从第一条用户消息截取）
@@ -50,6 +70,8 @@ export const AgentChat: React.FC = () => {
   const [currentContent, setCurrentContent] = useState('')
   const [currentToolCalls, setCurrentToolCalls] = useState<Array<{ name: string; args: unknown; thinking?: string }>>([])
   const [currentStage, setCurrentStage] = useState<'decision' | 'execution' | 'answer' | undefined>(undefined)
+  // 新增：当前执行步骤列表
+  const [currentExecutionSteps, setCurrentExecutionSteps] = useState<ExecutionStep[]>([])
   const [sessionId, setSessionId] = useState(() => `session-${Date.now()}`)
   const [historyVisible, setHistoryVisible] = useState(false)
   const [modelList, setModelList] = useState<ModelConfig[]>([])
@@ -92,7 +114,7 @@ export const AgentChat: React.FC = () => {
 
   // 消息变化时自动保存
   useEffect(() => {
-    if (messages.length === 0) return
+    if (messages.length === 0) return undefined
 
     const saveSession: () => Promise<void> = async () => {
       try {
@@ -151,6 +173,7 @@ export const AgentChat: React.FC = () => {
     setIsLoading(true)
     setCurrentContent('')
     setCurrentToolCalls([])
+    setCurrentExecutionSteps([])  // 清空执行步骤
     setCurrentStage(undefined)
 
     try {
@@ -194,29 +217,98 @@ export const AgentChat: React.FC = () => {
 
       case 'tool-call':
         if (evt.name) {
+          // 保存旧版格式（兼容）
           setCurrentToolCalls(prev => [...prev, { 
             name: evt.name!, 
             args: evt.args,
-            thinking: evt.thinking  // 🆕 保存 LLM 思考
+            thinking: evt.thinking
+          }])
+          
+          // 🆕 构建执行步骤：思考阶段
+          if (evt.thinking) {
+            setCurrentExecutionSteps(prev => [...prev, {
+              id: `step-${Date.now()}-thinking`,
+              type: 'thinking',
+              stage: evt.stage,
+              content: evt.thinking,
+              timestamp: evt.ts,
+              status: 'completed'
+            }])
+          }
+          
+          // 🆕 构建执行步骤：工具调用
+          setCurrentExecutionSteps(prev => [...prev, {
+            id: `step-${Date.now()}-call-${evt.name}`,
+            type: 'tool-call',
+            stage: evt.stage,
+            content: `调用工具: ${evt.name}`,
+            toolName: evt.name,
+            toolArgs: evt.args,
+            timestamp: evt.ts,
+            status: 'running'  // 初始状态为运行中
           }])
         }
         break
 
       case 'tool-result':
-        // 工具结果已收到，可以在这里添加额外处理
+        // 🆕 构建执行步骤：工具结果
+        if (evt.name) {
+          // 更新对应工具调用的状态为完成
+          setCurrentExecutionSteps(prev => {
+            const updated = [...prev]
+            const callStepIndex = updated.findIndex(
+              s => s.type === 'tool-call' && s.toolName === evt.name && s.status === 'running'
+            )
+            if (callStepIndex !== -1) {
+              updated[callStepIndex] = {
+                ...updated[callStepIndex],
+                status: 'completed'
+              }
+            }
+            
+            // 添加结果步骤
+            updated.push({
+              id: `step-${Date.now()}-result-${evt.name}`,
+              type: 'tool-result',
+              stage: evt.stage,
+              content: `工具返回结果`,
+              toolName: evt.name,
+              toolResult: evt.output,
+              timestamp: evt.ts,
+              status: 'completed'
+            })
+            
+            return updated
+          })
+        }
         break
 
       case 'round-end':
-        // 在 round-end 时保存助手消息到历史
+        // 🆕 添加最终回答步骤
         setCurrentContent(prevContent => {
           if (prevContent) {
-            setMessages(prev => [...prev, {
-              id: Date.now().toString(),
-              role: 'assistant',
-              content: prevContent,
-              timestamp: Date.now(),
-              toolCalls: currentToolCalls.length > 0 ? [...currentToolCalls] : undefined
-            }])
+            setCurrentExecutionSteps(prev => {
+              const stepsWithAnswer = [...prev, {
+                id: `step-${Date.now()}-answer`,
+                type: 'answer' as const,
+                stage: 'answer' as const,
+                content: prevContent,
+                timestamp: Date.now(),
+                status: 'completed' as const
+              }]
+              
+              // 保存消息（包含执行步骤）
+              setMessages(prevMsgs => [...prevMsgs, {
+                id: Date.now().toString(),
+                role: 'assistant',
+                content: prevContent,
+                timestamp: Date.now(),
+                toolCalls: currentToolCalls.length > 0 ? [...currentToolCalls] : undefined,
+                executionSteps: stepsWithAnswer.length > 0 ? stepsWithAnswer : undefined
+              }])
+              
+              return []  // 清空步骤列表
+            })
           }
           return '' // 清空当前内容
         })
@@ -253,6 +345,7 @@ export const AgentChat: React.FC = () => {
         setInput('')
         setCurrentContent('')
         setCurrentToolCalls([])
+        setCurrentExecutionSteps([])
         setCurrentStage(undefined)
         // 生成新的 sessionId
         setSessionId(`session-${Date.now()}`)
@@ -274,6 +367,7 @@ export const AgentChat: React.FC = () => {
         setInput('')
         setCurrentContent('')
         setCurrentToolCalls([])
+        setCurrentExecutionSteps([])
         setCurrentStage(undefined)
         
         // 立即保存空会话到文件，确保重启后仍然是空的
@@ -302,6 +396,7 @@ export const AgentChat: React.FC = () => {
     setInput('')
     setCurrentContent('')
     setCurrentToolCalls([])
+    setCurrentExecutionSteps([])
     setCurrentStage(undefined)
   }
 
@@ -328,6 +423,37 @@ export const AgentChat: React.FC = () => {
             </Text>
           </div>
 
+          {/* 🆕 执行步骤面板（新版）- 放在消息内容上方 */}
+          {msg.executionSteps && msg.executionSteps.length > 0 ? (
+            <ExecutionStepsPanel steps={msg.executionSteps} defaultCollapsed={true} />
+          ) : (
+            /* 兼容旧版：工具调用标签 */
+            msg.toolCalls && msg.toolCalls.length > 0 && (
+              <div className="tool-calls-container">
+                <Space wrap size={[4, 4]} direction="vertical">
+                  {msg.toolCalls.map((call, idx) => (
+                    <div key={idx}>
+                      <Tooltip title={call.thinking || '工具调用'}>
+                        <Tag
+                          icon={<ToolOutlined />}
+                          color="blue"
+                          className="tool-tag"
+                        >
+                          {call.name}
+                        </Tag>
+                      </Tooltip>
+                      {call.thinking && (
+                        <Text type="secondary" style={{ fontSize: '12px', marginLeft: '8px' }}>
+                          💭 {call.thinking}
+                        </Text>
+                      )}
+                    </div>
+                  ))}
+                </Space>
+              </div>
+            )
+          )}
+
           <div className={`message-content ${isUser ? 'user' : 'assistant'}`}>
             {isUser ? (
               <div>{msg.content}</div>
@@ -335,32 +461,6 @@ export const AgentChat: React.FC = () => {
               <MarkdownMessage content={msg.content} />
             )}
           </div>
-
-          {/* 工具调用标签 */}
-          {msg.toolCalls && msg.toolCalls.length > 0 && (
-            <div className="tool-calls-container">
-              <Space wrap size={[4, 4]} direction="vertical">
-                {msg.toolCalls.map((call, idx) => (
-                  <div key={idx}>
-                    <Tooltip title={call.thinking || '工具调用'}>
-                      <Tag
-                        icon={<ToolOutlined />}
-                        color="blue"
-                        className="tool-tag"
-                      >
-                        {call.name}
-                      </Tag>
-                    </Tooltip>
-                    {call.thinking && (
-                      <Text type="secondary" style={{ fontSize: '12px', marginLeft: '8px' }}>
-                        💭 {call.thinking}
-                      </Text>
-                    )}
-                  </div>
-                ))}
-              </Space>
-            </div>
-          )}
         </div>
       </div>
     )
@@ -485,36 +585,15 @@ export const AgentChat: React.FC = () => {
                   <span className="streaming-indicator" />
                 </div>
 
+                {/* 🆕 实时执行步骤面板 - 放在消息内容上方 */}
+                {currentExecutionSteps.length > 0 && (
+                  <ExecutionStepsPanel steps={currentExecutionSteps} defaultCollapsed={false} />
+                )}
+
                 {/* 流式内容也使用 Markdown 渲染 */}
                 <div className="message-content assistant">
                   <MarkdownMessage content={currentContent} />
                 </div>
-
-                {/* 工具调用标签 */}
-                {currentToolCalls.length > 0 && (
-                  <div className="tool-calls-container">
-                    <Space wrap size={[4, 4]} direction="vertical">
-                      {currentToolCalls.map((call, idx) => (
-                        <div key={idx}>
-                          <Tooltip title={call.thinking || '工具调用'}>
-                            <Tag
-                              icon={<ToolOutlined />}
-                              color="processing"
-                              className="tool-tag"
-                            >
-                              {call.name}
-                            </Tag>
-                          </Tooltip>
-                          {call.thinking && (
-                            <Text type="secondary" style={{ fontSize: '12px', marginLeft: '8px' }}>
-                              💭 {call.thinking}
-                            </Text>
-                          )}
-                        </div>
-                      ))}
-                    </Space>
-                  </div>
-                )}
               </div>
             </div>
           )}
