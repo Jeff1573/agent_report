@@ -44,14 +44,20 @@ interface ExecutionStepsPanelProps {
  */
 const getStepTitle = (step: ExecutionStep): string => {
   if (step.toolName) {
+    // 根据步骤类型区分标题
+    if (step.type === 'tool-call') {
+      return `🔧 ${step.toolName}`
+    } else if (step.type === 'tool-result') {
+      return `✅ ${step.toolName} (结果)`
+    }
     return step.toolName
   }
   
   const titleMap = {
-    thinking: '思考分析',
-    'tool-call': '工具调用',
-    'tool-result': '执行结果',
-    answer: '生成回答'
+    thinking: '💭 思考分析',
+    'tool-call': '🔧 工具调用',
+    'tool-result': '✅ 执行结果',
+    answer: '📝 生成回答'
   }
   
   return titleMap[step.type] || '执行步骤'
