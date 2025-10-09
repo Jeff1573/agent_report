@@ -1,7 +1,7 @@
 import { app, shell } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
-import type { AppSettings, ModelConfig, StreamingValidationResult } from '../../shared/ipc'
+import type { AppSettings, ModelConfig, StreamingValidationResult, VectorDbConfig, RagValidationResult, RetrieverConfig } from '../../shared/ipc'
 
 const SETTINGS_FILE = 'settings.json'
 const MCP_CONFIG_FILE = 'mcp.json'
@@ -40,7 +40,7 @@ function ensureSettings(): AppSettings {
     const raw = fs.readFileSync(file, 'utf-8')
     const json = JSON.parse(raw) as AppSettings
     if (!Array.isArray(json.modelConfigs)) json.modelConfigs = []
-    if (!('vectorDbConfigs' in json)) json.vectorDbConfigs = []
+    if (!Array.isArray(json.vectorDbConfigs)) json.vectorDbConfigs = []
     return json
   } catch {
     const fallback: AppSettings = { modelConfigs: [], vectorDbConfigs: [] }
@@ -136,6 +136,129 @@ export async function importSettings(json: string): Promise<void> {
   } catch (e) {
     throw new Error(`导入失败: ${e instanceof Error ? e.message : String(e)}`)
   }
+}
+
+// ------------------------
+// RAG（向量数据库）配置相关
+// ------------------------
+
+function assertNonEmpty(text: string, name: string): void {
+  if (!text || !text.trim()) throw new Error(`${name} 不能为空`)
+}
+
+function normalizeVectorDbConfig(input: VectorDbConfig): VectorDbConfig {
+  const now = Date.now()
+  const id = (input.id || '').trim() || `rag-${now}`
+  const name = (input.name || '').trim()
+  const provider = (input.provider || 'chroma') as 'chroma'
+  const enabled = Boolean(input.enabled)
+  const connUrl = (input.connection?.url || '').trim()
+  const rootDir = (input.storage?.rootDir || '').trim()
+  const rawDir = (input.storage?.rawDir || '').trim()
+
+  assertNonEmpty(name, '名称')
+  assertNonEmpty(connUrl, 'Chroma URL')
+  assertNonEmpty(rootDir, '知识库根目录')
+  assertNonEmpty(rawDir, '原始文件目录')
+
+  const defaultCollection = (input.defaultCollection || '').trim() || undefined
+
+  const embeddings = input.embeddings
+    ? {
+        provider: input.embeddings.provider,
+        model: (input.embeddings.model || '').trim() || undefined,
+        apiKey: (input.embeddings.apiKey || '').trim() || undefined
+      }
+    : undefined
+
+  const retriever: RetrieverConfig = input.retriever
+    ? {
+        k: typeof input.retriever.k === 'number' ? input.retriever.k : 4,
+        searchType: input.retriever.searchType === 'mmr' ? 'mmr' : 'similarity',
+        mmrLambda:
+          typeof input.retriever.mmrLambda === 'number' ? input.retriever.mmrLambda : 0.5,
+        fetchK:
+          typeof input.retriever.fetchK === 'number' && input.retriever.fetchK > 0
+            ? input.retriever.fetchK
+            : 32
+      }
+    : { k: 4, searchType: 'similarity', mmrLambda: 0.5, fetchK: 32 }
+
+  return {
+    id,
+    name,
+    provider,
+    enabled,
+    connection: { url: connUrl },
+    storage: { rootDir, rawDir },
+    defaultCollection,
+    embeddings,
+    retriever,
+    isDefault: Boolean(input.isDefault),
+    updatedAt: now
+  }
+}
+
+export async function listVectorDbConfigs(): Promise<VectorDbConfig[]> {
+  const s = ensureSettings()
+  return s.vectorDbConfigs
+}
+
+export async function getDefaultVectorDb(): Promise<VectorDbConfig | null> {
+  const s = ensureSettings()
+  return s.vectorDbConfigs.find(v => v.isDefault) ?? null
+}
+
+export async function upsertVectorDbConfig(cfg: VectorDbConfig): Promise<void> {
+  const s = ensureSettings()
+  const norm = normalizeVectorDbConfig(cfg)
+
+  const idx = s.vectorDbConfigs.findIndex(v => v.id === norm.id)
+  if (idx >= 0) s.vectorDbConfigs[idx] = { ...s.vectorDbConfigs[idx], ...norm, id: norm.id }
+  else s.vectorDbConfigs.push(norm)
+
+  // 若设置为默认，则清除其他默认
+  if (norm.isDefault) {
+    s.vectorDbConfigs = s.vectorDbConfigs.map(v => ({ ...v, isDefault: v.id === norm.id }))
+  }
+
+  saveSettings(s)
+}
+
+export async function deleteVectorDbConfig(id: string): Promise<void> {
+  const s = ensureSettings()
+  const before = s.vectorDbConfigs.length
+  s.vectorDbConfigs = s.vectorDbConfigs.filter(v => v.id !== id)
+  if (s.vectorDbConfigs.length !== before) saveSettings(s)
+}
+
+export async function setDefaultVectorDb(id: string): Promise<void> {
+  const s = ensureSettings()
+  const exists = s.vectorDbConfigs.some(v => v.id === id)
+  if (!exists) throw new Error('RAG 配置不存在')
+  s.vectorDbConfigs = s.vectorDbConfigs.map(v => ({ ...v, isDefault: v.id === id }))
+  saveSettings(s)
+}
+
+export async function toggleVectorDbEnabled(id: string, enabled: boolean): Promise<void> {
+  const s = ensureSettings()
+  const idx = s.vectorDbConfigs.findIndex(v => v.id === id)
+  if (idx < 0) throw new Error('RAG 配置不存在')
+  s.vectorDbConfigs[idx].enabled = Boolean(enabled)
+  // 若禁用默认项，则清除默认标记
+  if (!s.vectorDbConfigs[idx].enabled && s.vectorDbConfigs[idx].isDefault) {
+    s.vectorDbConfigs[idx].isDefault = false
+  }
+  saveSettings(s)
+}
+
+export async function validateVectorDb(cfg: VectorDbConfig): Promise<RagValidationResult> {
+  // 将校验委托给 @agent/ 实现，主进程不承载 RAG 逻辑
+  const norm = normalizeVectorDbConfig(cfg)
+  // @ts-ignore 运行时动态导入 agent 工作区
+  const { validateRagConfig } = await import('agent/services/rag')
+  const res = await validateRagConfig(norm)
+  return res as RagValidationResult
 }
 
 /**

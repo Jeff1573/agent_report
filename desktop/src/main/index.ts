@@ -296,6 +296,70 @@ app.whenReady().then(() => {
     return settingsService.openAppDataFile(filename)
   })
 
+  // IPC 白名单：设置（RAG 配置）相关
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_RAG_LIST, async () => {
+    return settingsService.listVectorDbConfigs()
+  })
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_RAG_GET_DEFAULT, async () => {
+    return settingsService.getDefaultVectorDb()
+  })
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_RAG_UPSERT, async (_event, cfg) => {
+    await settingsService.upsertVectorDbConfig(cfg)
+  })
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_RAG_DELETE, async (_event, id: string) => {
+    await settingsService.deleteVectorDbConfig(id)
+  })
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_RAG_SET_DEFAULT, async (_event, id: string) => {
+    await settingsService.setDefaultVectorDb(id)
+  })
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_RAG_TOGGLE_ENABLED, async (_event, id: string, enabled: boolean) => {
+    await settingsService.toggleVectorDbEnabled(id, enabled)
+  })
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_RAG_VALIDATE, async (_event, cfg) => {
+    return settingsService.validateVectorDb(cfg)
+  })
+
+  // 入库相关（文件/目录）
+  ipcMain.handle(
+    IPC_CHANNELS.RAG_IMPORT_FILE,
+    async (
+      _event,
+      cfgId: string,
+      filePath: string,
+      collection: string,
+      split?: { chunkSize?: number; chunkOverlap?: number }
+    ) => {
+      if (!cfgId || !filePath || !collection) throw new Error('参数不完整')
+      const cfgList = await settingsService.listVectorDbConfigs()
+      const cfg = cfgList.find((v) => v.id === cfgId)
+      if (!cfg) throw new Error('RAG 配置不存在')
+      if (!cfg.enabled) throw new Error('该 RAG 配置未启用')
+      // @ts-ignore 运行时动态导入 agent 实现
+      const { ingestFileWithConfig } = await import('agent/services/rag')
+      await ingestFileWithConfig(cfg, filePath, collection, split)
+    }
+  )
+
+  ipcMain.handle(
+    IPC_CHANNELS.RAG_IMPORT_DIR,
+    async (
+      _event,
+      cfgId: string,
+      dirPath: string,
+      collection: string,
+      split?: { chunkSize?: number; chunkOverlap?: number }
+    ) => {
+      if (!cfgId || !dirPath || !collection) throw new Error('参数不完整')
+      const cfgList = await settingsService.listVectorDbConfigs()
+      const cfg = cfgList.find((v) => v.id === cfgId)
+      if (!cfg) throw new Error('RAG 配置不存在')
+      if (!cfg.enabled) throw new Error('该 RAG 配置未启用')
+      // @ts-ignore 运行时动态导入 agent 实现
+      const { ingestDirWithConfig } = await import('agent/services/rag')
+      await ingestDirWithConfig(cfg, dirPath, collection, split)
+    }
+  )
+
   createWindow()
 
   // 启动 MCP 配置文件监听

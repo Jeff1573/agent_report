@@ -44,7 +44,17 @@ const api: PreloadApi = {
     validateStreaming: (modelId) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_MODEL_VALIDATE_STREAMING, modelId),
     exportSettings: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_EXPORT),
     importSettings: (json) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_IMPORT, json),
-    openAppDataFile: (filename) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_OPEN_APP_DATA_FILE, filename)
+    openAppDataFile: (filename) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_OPEN_APP_DATA_FILE, filename),
+    // RAG 相关
+    ragList: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_RAG_LIST),
+    ragGetDefault: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_RAG_GET_DEFAULT),
+    ragUpsert: (cfg) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_RAG_UPSERT, cfg),
+    ragDelete: (id) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_RAG_DELETE, id),
+    ragSetDefault: (id) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_RAG_SET_DEFAULT, id),
+    ragToggleEnabled: (id, enabled) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_RAG_TOGGLE_ENABLED, id, enabled),
+    ragValidate: (cfg) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_RAG_VALIDATE, cfg),
+    ragImportFile: (cfgId, filePath, collection, split) => ipcRenderer.invoke(IPC_CHANNELS.RAG_IMPORT_FILE, cfgId, filePath, collection, split),
+    ragImportDir: (cfgId, dirPath, collection, split) => ipcRenderer.invoke(IPC_CHANNELS.RAG_IMPORT_DIR, cfgId, dirPath, collection, split)
   }
 }
 

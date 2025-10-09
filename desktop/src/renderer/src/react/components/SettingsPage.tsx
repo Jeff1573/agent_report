@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
-import { Button, Card, Descriptions, Divider, Form, Input, InputNumber, List, Modal, Space, Typography, message, Upload, Tag, Tooltip, Switch } from 'antd'
+import { Button, Card, Descriptions, Divider, Form, Input, InputNumber, List, Modal, Space, Typography, message, Upload, Tag, Tooltip, Switch, Tabs } from 'antd'
 import { LeftOutlined, PlusOutlined, EditOutlined, DeleteOutlined, CheckOutlined, UploadOutlined, DownloadOutlined, SettingOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons'
-import type { ModelConfig } from '../../../../shared/ipc'
+import type { ModelConfig, VectorDbConfig, RagValidationResult } from '../../../../shared/ipc'
 import { useNavigate } from 'react-router-dom'
 
 const { Text } = Typography
@@ -15,6 +15,14 @@ export const SettingsPage: React.FC = () => {
   const [editing, setEditing] = useState<ModelConfig | null>(null)
   const [validating, setValidating] = useState(false)
   const [form] = Form.useForm<ModelConfig>()
+
+  // RAG 配置状态
+  const [ragList, setRagList] = useState<VectorDbConfig[]>([])
+  const [ragLoading, setRagLoading] = useState(false)
+  const [ragModalOpen, setRagModalOpen] = useState(false)
+  const [ragEditing, setRagEditing] = useState<VectorDbConfig | null>(null)
+  const [ragForm] = Form.useForm<VectorDbConfig>()
+  const [ragValidating, setRagValidating] = useState(false)
 
   const load = async (): Promise<void> => {
     setLoading(true)
@@ -31,6 +39,22 @@ export const SettingsPage: React.FC = () => {
   }
 
   useEffect(() => { load() }, [])
+
+  /**
+   * 加载 RAG 应用配置列表。
+   */
+  const loadRag = async (): Promise<void> => {
+    setRagLoading(true)
+    try {
+      const list = await window.api.settings.ragList()
+      setRagList(list)
+    } catch (e) {
+      message.error('加载 RAG 配置失败')
+    } finally {
+      setRagLoading(false)
+    }
+  }
+  useEffect(() => { loadRag() }, [])
 
   const onAdd = (): void => {
     setEditing(null)
@@ -216,90 +240,259 @@ export const SettingsPage: React.FC = () => {
     }
   }
 
+  // ---------------- RAG：事件处理 ----------------
+  const onRagAdd = (): void => {
+    setRagEditing(null)
+    ragForm.resetFields()
+    ragForm.setFieldsValue({
+      provider: 'chroma',
+      enabled: true,
+      connection: { url: 'http://localhost:8000' },
+      embeddings: { provider: 'openai', model: 'text-embedding-3-small' },
+      retriever: { k: 4, searchType: 'similarity', mmrLambda: 0.5, fetchK: 32 }
+    })
+    setRagModalOpen(true)
+  }
+
+  const onRagEdit = (cfg: VectorDbConfig): void => {
+    setRagEditing(cfg)
+    ragForm.setFieldsValue(cfg)
+    setRagModalOpen(true)
+  }
+
+  const onRagDelete = async (id: string): Promise<void> => {
+    Modal.confirm({
+      title: '删除 RAG 应用',
+      content: '确定删除该 RAG 应用配置？',
+      okText: '删除',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await window.api.settings.ragDelete(id)
+          message.success('已删除')
+          loadRag()
+        } catch (e) {
+          message.error('删除失败')
+        }
+      }
+    })
+  }
+
+  const onRagSetDefault = async (id: string): Promise<void> => {
+    try {
+      await window.api.settings.ragSetDefault(id)
+      message.success('已设为默认')
+      loadRag()
+    } catch (e) {
+      message.error('设置失败')
+    }
+  }
+
+  const onRagToggleEnabled = async (id: string, enabled: boolean): Promise<void> => {
+    try {
+      await window.api.settings.ragToggleEnabled(id, enabled)
+      message.success(enabled ? '已启用' : '已禁用')
+      loadRag()
+    } catch (e) {
+      message.error('操作失败')
+    }
+  }
+
+  const onRagValidate = async (cfg: VectorDbConfig): Promise<void> => {
+    try {
+      setRagValidating(true)
+      const res: RagValidationResult = await window.api.settings.ragValidate(cfg)
+      if (res.ok) {
+        if (res.info?.defaultCollectionExists === false) {
+          message.warning('连通成功，但默认集合不存在')
+        } else {
+          message.success('连接正常')
+        }
+      } else {
+        message.error(res.errors?.[0] || '校验失败')
+      }
+    } catch (e) {
+      message.error('校验异常')
+    } finally {
+      setRagValidating(false)
+    }
+  }
+
+  const onRagSubmit = async (): Promise<void> => {
+    try {
+      const values = await ragForm.validateFields()
+      const payload: VectorDbConfig = {
+        id: ragEditing?.id || '',
+        name: (values.name || '').trim(),
+        provider: 'chroma',
+        enabled: Boolean(values.enabled ?? true),
+        isDefault: Boolean(values.isDefault),
+        connection: { url: (values.connection?.url || '').trim() },
+        storage: {
+          rootDir: (values.storage?.rootDir || '').trim(),
+          rawDir: (values.storage?.rawDir || '').trim()
+        },
+        defaultCollection: (values.defaultCollection || '').trim() || undefined,
+        embeddings: values.embeddings
+          ? {
+              provider: values.embeddings.provider,
+              model: (values.embeddings.model || '').trim() || undefined,
+              apiKey: (values.embeddings.apiKey || '').trim() || undefined
+            }
+          : { provider: 'openai', model: 'text-embedding-3-small' },
+        retriever: {
+          k: typeof values.retriever?.k === 'number' ? values.retriever.k : 4,
+          searchType: values.retriever?.searchType === 'mmr' ? 'mmr' : 'similarity',
+          mmrLambda: typeof values.retriever?.mmrLambda === 'number' ? values.retriever.mmrLambda : 0.5,
+          fetchK: typeof values.retriever?.fetchK === 'number' ? values.retriever.fetchK : 32
+        },
+        updatedAt: Date.now()
+      }
+      await window.api.settings.ragUpsert(payload)
+      setRagModalOpen(false)
+      message.success(ragEditing ? '已更新' : '已新增')
+      loadRag()
+    } catch (e) {
+      // 表单校验失败或请求失败
+    }
+  }
+
   return (
     <div style={{ padding: 16 }}>
       <Button type="link" icon={<LeftOutlined />} onClick={() => navigate('/')}>返回</Button>
-      <Card
-        title={
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>设置</span>
-            <Space>
-              <Upload beforeUpload={beforeUpload} showUploadList={false}>
-                <Button icon={<UploadOutlined />}>导入</Button>
-              </Upload>
-              <Button icon={<DownloadOutlined />} onClick={onExport}>导出</Button>
-              <Button type="primary" icon={<PlusOutlined />} onClick={onAdd}>新增模型</Button>
-            </Space>
-          </div>
-        }
-      >
-        <Divider orientation="left">配置文件</Divider>
-        <Space direction="vertical" style={{ width: '100%', marginBottom: 24 }}>
-          <Text type="secondary">
-            点击下方按钮在系统默认编辑器中打开配置文件。
-          </Text>
-          <Space>
-            <Button icon={<SettingOutlined />} onClick={() => onOpenAppDataFile('settings.json', '设置文件')}>
-              打开设置文件
-            </Button>
-            <Button icon={<SettingOutlined />} onClick={() => onOpenAppDataFile('mcp.json', 'MCP 配置文件')}>
-              打开 MCP 配置文件
-            </Button>
-          </Space>
-        </Space>
-
-        <Divider orientation="left">模型配置</Divider>
-        <List
-          loading={loading}
-          dataSource={models}
-          renderItem={(item) => {
-            const active = item.id === activeId
-            return (
-              <List.Item
-                actions={[
-                  <Button key="active" type={active ? 'primary' : 'default'} icon={<CheckOutlined />} onClick={() => onSetActive(item.id)} disabled={active}>默认</Button>,
-                  <Button key="edit" icon={<EditOutlined />} onClick={() => onEdit(item)} />,
-                  <Button key="del" icon={<DeleteOutlined />} danger onClick={() => onDelete(item.id)} />
-                ]}
-              >
-                <List.Item.Meta
-                  title={<Space>
-                    <Text strong>{item.name}</Text>
-                    {active && <Text type="success">(当前使用)</Text>}
-                    {item.streamingValidation && (
-                      <Tooltip title={
-                        item.streamingValidation.supported 
-                          ? `支持流式 - 首个 token 延迟: ${item.streamingValidation.firstTokenLatency || item.streamingValidation.duration}ms`
-                          : `不支持流式 - ${item.streamingValidation.error}`
-                      }>
-                        {item.streamingValidation.supported ? (
-                          <Tag icon={<CheckCircleOutlined />} color="success">已验证</Tag>
-                        ) : (
-                          <Tag icon={<CloseCircleOutlined />} color="default">不支持</Tag>
-                        )}
-                      </Tooltip>
-                    )}
-                  </Space>}
-                  description={
-                    <Space direction="vertical" style={{ width: '100%' }}>
-                      <Descriptions size="small" column={3}>
-                        <Descriptions.Item label="模型">{item.model}</Descriptions.Item>
-                        <Descriptions.Item label="Base URL">{item.baseURL || '默认'}</Descriptions.Item>
-                        <Descriptions.Item label="流式输出">
-                          <Tag color={item.streaming ? 'green' : 'default'}>
-                            {item.streaming ? '已开启' : '已关闭'}
-                          </Tag>
-                        </Descriptions.Item>
-                        <Descriptions.Item label="超时(ms)">{item.timeout ?? 60000}</Descriptions.Item>
-                        <Descriptions.Item label="重试">{item.maxRetries ?? 2}</Descriptions.Item>
-                        <Descriptions.Item label="温度">{item.temperature ?? 0}</Descriptions.Item>
-                      </Descriptions>
+      <Card title={<span>设置</span>}>
+        <Tabs
+          items={[
+            {
+              key: 'models',
+              label: '模型配置',
+              children: (
+                <>
+                  <Space direction="vertical" style={{ width: '100%', marginBottom: 24 }}>
+                    <Text type="secondary">点击下方按钮在系统默认编辑器中打开配置文件。</Text>
+                    <Space>
+                      <Button icon={<SettingOutlined />} onClick={() => onOpenAppDataFile('settings.json', '设置文件')}>打开设置文件</Button>
+                      <Button icon={<SettingOutlined />} onClick={() => onOpenAppDataFile('mcp.json', 'MCP 配置文件')}>打开 MCP 配置文件</Button>
                     </Space>
-                  }
-                />
-              </List.Item>
-            )
-          }}
+                  </Space>
+                  <Space style={{ marginBottom: 12 }}>
+                    <Upload beforeUpload={beforeUpload} showUploadList={false}>
+                      <Button icon={<UploadOutlined />}>导入</Button>
+                    </Upload>
+                    <Button icon={<DownloadOutlined />} onClick={onExport}>导出</Button>
+                    <Button type="primary" icon={<PlusOutlined />} onClick={onAdd}>新增模型</Button>
+                  </Space>
+                  <List
+                    loading={loading}
+                    dataSource={models}
+                    renderItem={(item) => {
+                      const active = item.id === activeId
+                      return (
+                        <List.Item
+                          actions={[
+                            <Button key="active" type={active ? 'primary' : 'default'} icon={<CheckOutlined />} onClick={() => onSetActive(item.id)} disabled={active}>默认</Button>,
+                            <Button key="edit" icon={<EditOutlined />} onClick={() => onEdit(item)} />,
+                            <Button key="del" icon={<DeleteOutlined />} danger onClick={() => onDelete(item.id)} />
+                          ]}
+                        >
+                          <List.Item.Meta
+                            title={<Space>
+                              <Text strong>{item.name}</Text>
+                              {active && <Text type="success">(当前使用)</Text>}
+                              {item.streamingValidation && (
+                                <Tooltip title={
+                                  item.streamingValidation.supported 
+                                    ? `支持流式 - 首个 token 延迟: ${item.streamingValidation.firstTokenLatency || item.streamingValidation.duration}ms`
+                                    : `不支持流式 - ${item.streamingValidation.error}`
+                                }>
+                                  {item.streamingValidation.supported ? (
+                                    <Tag icon={<CheckCircleOutlined />} color="success">已验证</Tag>
+                                  ) : (
+                                    <Tag icon={<CloseCircleOutlined />} color="default">不支持</Tag>
+                                  )}
+                                </Tooltip>
+                              )}
+                            </Space>}
+                            description={
+                              <Space direction="vertical" style={{ width: '100%' }}>
+                                <Descriptions size="small" column={3}>
+                                  <Descriptions.Item label="模型">{item.model}</Descriptions.Item>
+                                  <Descriptions.Item label="Base URL">{item.baseURL || '默认'}</Descriptions.Item>
+                                  <Descriptions.Item label="流式输出">
+                                    <Tag color={item.streaming ? 'green' : 'default'}>
+                                      {item.streaming ? '已开启' : '已关闭'}
+                                    </Tag>
+                                  </Descriptions.Item>
+                                  <Descriptions.Item label="超时(ms)">{item.timeout ?? 60000}</Descriptions.Item>
+                                  <Descriptions.Item label="重试">{item.maxRetries ?? 2}</Descriptions.Item>
+                                  <Descriptions.Item label="温度">{item.temperature ?? 0}</Descriptions.Item>
+                                </Descriptions>
+                              </Space>
+                            }
+                          />
+                        </List.Item>
+                      )
+                    }}
+                  />
+                </>
+              )
+            },
+            {
+              key: 'rag',
+              label: 'RAG 数据库',
+              children: (
+                <>
+                  <Space style={{ marginBottom: 12 }}>
+                    <Button type="primary" icon={<PlusOutlined />} onClick={onRagAdd}>新增 RAG 应用</Button>
+                  </Space>
+                  <List
+                    loading={ragLoading}
+                    dataSource={ragList}
+                    renderItem={(item) => {
+                      const isDefault = Boolean(item.isDefault)
+                      return (
+                        <List.Item
+                          actions={[
+                            <Switch
+                              key="enabled"
+                              checked={item.enabled}
+                              checkedChildren="启用"
+                              unCheckedChildren="禁用"
+                              onChange={(checked) => onRagToggleEnabled(item.id, checked)}
+                            />,
+                            <Button key="default" type={isDefault ? 'primary' : 'default'} icon={<CheckOutlined />} onClick={() => onRagSetDefault(item.id)} disabled={isDefault || !item.enabled}>默认</Button>,
+                            <Button key="validate" loading={ragValidating} onClick={() => onRagValidate(item)}>测试连接</Button>,
+                            <Button key="edit" icon={<EditOutlined />} onClick={() => onRagEdit(item)} />,
+                            <Button key="del" icon={<DeleteOutlined />} danger onClick={() => onRagDelete(item.id)} />
+                          ]}
+                        >
+                          <List.Item.Meta
+                            title={<Space>
+                              <Text strong>{item.name}</Text>
+                              {isDefault && <Tag color="blue">默认</Tag>}
+                              <Tag>{item.provider}</Tag>
+                              <Tag color={item.enabled ? 'green' : 'default'}>{item.enabled ? '启用' : '禁用'}</Tag>
+                            </Space>}
+                            description={
+                              <Space direction="vertical" style={{ width: '100%' }}>
+                                <Descriptions size="small" column={3}>
+                                  <Descriptions.Item label="URL">{item.connection?.url}</Descriptions.Item>
+                                  <Descriptions.Item label="默认集合">{item.defaultCollection || '-'}</Descriptions.Item>
+                                  <Descriptions.Item label="嵌入">{item.embeddings?.provider || 'openai'}{item.embeddings?.model ? ` · ${item.embeddings.model}` : ''}</Descriptions.Item>
+                                  <Descriptions.Item label="检索参数">k={item.retriever?.k ?? 4} · {item.retriever?.searchType || 'similarity'} · λ={item.retriever?.mmrLambda ?? 0.5} · fetchK={item.retriever?.fetchK ?? 32}</Descriptions.Item>
+                                </Descriptions>
+                              </Space>
+                            }
+                          />
+                        </List.Item>
+                      )
+                    }}
+                  />
+                </>
+              )
+            }
+          ]}
         />
       </Card>
 
@@ -345,6 +538,67 @@ export const SettingsPage: React.FC = () => {
               disabled={validating}
               loading={validating}
             />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={ragEditing ? '编辑 RAG 应用' : '新增 RAG 应用'}
+        open={ragModalOpen}
+        onCancel={() => setRagModalOpen(false)}
+        onOk={onRagSubmit}
+        okText={ragEditing ? '保存' : '创建'}
+      >
+        <Form form={ragForm} layout="vertical">
+          <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
+            <Input placeholder="如：产品文档库 / 代码库" />
+          </Form.Item>
+          <Form.Item name="provider" label="Provider">
+            <Input disabled value="chroma" />
+          </Form.Item>
+          <Form.Item name={["connection", "url"]} label="Chroma URL" rules={[{ required: true, message: '请输入 URL' }]}>
+            <Input placeholder="http://localhost:8000" />
+          </Form.Item>
+          <Form.Item name={["storage", "rootDir"]} label="知识库根目录" rules={[{ required: true, message: '请输入目录路径' }]}>
+            <Input placeholder="如：E:\\kb_root" />
+          </Form.Item>
+          <Form.Item name={["storage", "rawDir"]} label="原始文件目录" rules={[{ required: true, message: '请输入目录路径' }]}>
+            <Input placeholder="如：E:\\kb_root\\raw" />
+          </Form.Item>
+          <Form.Item name="defaultCollection" label="默认集合（可选）">
+            <Input placeholder="如：mindforge_kb" />
+          </Form.Item>
+
+          <Divider orientation="left">Embeddings</Divider>
+          <Form.Item name={["embeddings", "provider"]} label="提供商" initialValue="openai">
+            <Input placeholder="openai 或 gemini" />
+          </Form.Item>
+          <Form.Item name={["embeddings", "model"]} label="模型名">
+            <Input placeholder="text-embedding-3-small / gemini-embedding-001" />
+          </Form.Item>
+          <Form.Item name={["embeddings", "apiKey"]} label="API Key（可选）">
+            <Input.Password placeholder="留空走环境变量或界面模型配置" autoComplete="off" />
+          </Form.Item>
+
+          <Divider orientation="left">检索参数</Divider>
+          <Form.Item name={["retriever", "k"]} label="k（Top K）" initialValue={4}>
+            <InputNumber min={1} max={50} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name={["retriever", "searchType"]} label="搜索类型" initialValue="similarity">
+            <Input placeholder="similarity 或 mmr" />
+          </Form.Item>
+          <Form.Item name={["retriever", "mmrLambda"]} label="MMR λ" initialValue={0.5}>
+            <InputNumber min={0} max={1} step={0.1} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name={["retriever", "fetchK"]} label="fetchK" initialValue={32}>
+            <InputNumber min={1} max={500} style={{ width: '100%' }} />
+          </Form.Item>
+
+          <Form.Item name="enabled" label="启用" valuePropName="checked" initialValue={true}>
+            <Switch checkedChildren="启用" unCheckedChildren="禁用" />
+          </Form.Item>
+          <Form.Item name="isDefault" label="设为默认" valuePropName="checked" initialValue={false}>
+            <Switch />
           </Form.Item>
         </Form>
       </Modal>

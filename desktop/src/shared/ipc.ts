@@ -25,7 +25,18 @@ export const IPC_CHANNELS = {
   SETTINGS_MODEL_VALIDATE_STREAMING: 'settings/model/validateStreaming',
   SETTINGS_EXPORT: 'settings/export',
   SETTINGS_IMPORT: 'settings/import',
-  SETTINGS_OPEN_APP_DATA_FILE: 'settings/openAppDataFile'
+  SETTINGS_OPEN_APP_DATA_FILE: 'settings/openAppDataFile',
+  // 设置（RAG 配置）相关
+  SETTINGS_RAG_LIST: 'settings/rag/list',
+  SETTINGS_RAG_GET_DEFAULT: 'settings/rag/getDefault',
+  SETTINGS_RAG_UPSERT: 'settings/rag/upsert',
+  SETTINGS_RAG_DELETE: 'settings/rag/delete',
+  SETTINGS_RAG_SET_DEFAULT: 'settings/rag/setDefault',
+  SETTINGS_RAG_TOGGLE_ENABLED: 'settings/rag/toggleEnabled',
+  SETTINGS_RAG_VALIDATE: 'settings/rag/validate',
+  // 入库相关（文件/目录）
+  RAG_IMPORT_FILE: 'rag/import/file',
+  RAG_IMPORT_DIR: 'rag/import/dir'
 } as const
 
 /** 流式事件类型 */
@@ -72,6 +83,12 @@ export interface AgentChatOptions {
   stream?: boolean
   /** 使用的模型配置ID（前端选择后传递给主进程） */
   modelConfigId?: string
+  /** 会话级 RAG 应用选择（禁用则不传或传 false） */
+  ragEnabled?: boolean
+  /** 指定使用的 RAG 配置ID（不传则按默认） */
+  ragConfigId?: string
+  /** 可选指定 collection（未传则使用 RAG 配置的默认 collection） */
+  ragCollection?: string
 }
 
 /** 聊天消息 */
@@ -124,11 +141,85 @@ export interface ModelConfig {
   streamingValidation?: StreamingValidationResult
 }
 
-/** 设置文件结构（预留向量数据库配置） */
+/** Embeddings 配置（UI 可覆盖 env） */
+export interface EmbeddingsConfig {
+  /** 提供商：openai | gemini */
+  provider: 'openai' | 'gemini'
+  /** 模型名，如 text-embedding-3-small 或 gemini-embedding-001 */
+  model?: string
+  /** 覆盖 API Key（可选） */
+  apiKey?: string
+}
+
+/** 检索参数配置 */
+export interface RetrieverConfig {
+  /** 返回条数（默认 4） */
+  k?: number
+  /** 搜索类型 similarity | mmr（默认 similarity） */
+  searchType?: 'similarity' | 'mmr'
+  /** MMR 参数（默认 0.5） */
+  mmrLambda?: number
+  /** 候选集大小（默认 4*k 与 32 取大） */
+  fetchK?: number
+}
+
+/** RAG 应用配置（首期仅支持 provider=chroma） */
+export interface VectorDbConfig {
+  id: string
+  name: string
+  /** 是否启用此应用 */
+  enabled: boolean
+  /** 是否为默认应用（同一时间仅允许一个） */
+  isDefault?: boolean
+  /** 提供商（首期固定 chroma，预留扩展） */
+  provider: 'chroma'
+  /** 连接配置 */
+  connection: {
+    /** Chroma 服务 URL */
+    url: string
+  }
+  /** 知识库存储目录（入库原始文件与缓存） */
+  storage: {
+    /** 知识库根目录（KB_STORAGE_ROOT） */
+    rootDir: string
+    /** 原始文件目录（KB_STORAGE_RAW_DIR） */
+    rawDir: string
+  }
+  /** 默认集合名（导入与对话未指定时使用） */
+  defaultCollection?: string
+  /** Embeddings 配置（覆盖 env） */
+  embeddings?: EmbeddingsConfig
+  /** 检索参数默认值 */
+  retriever?: RetrieverConfig
+  /** 更新时间戳 */
+  updatedAt: number
+}
+
+/** RAG 配置校验结果 */
+export interface RagValidationResult {
+  /** 是否通过基本校验 */
+  ok: boolean
+  /** 错误信息列表（阻断性） */
+  errors: string[]
+  /** 警告信息列表（非阻断） */
+  warnings?: string[]
+  /** 附加信息 */
+  info?: {
+    /** Chroma 心跳连通 */
+    heartbeat?: boolean
+    /** 默认集合是否存在 */
+    defaultCollectionExists?: boolean
+  }
+  /** 时间戳 */
+  timestamp: number
+}
+
+/** 设置文件结构（扩展向量数据库配置） */
 export interface AppSettings {
   modelConfigs: ModelConfig[]
   activeModelId?: string
-  vectorDbConfigs?: unknown[]
+  /** RAG 应用配置列表 */
+  vectorDbConfigs: VectorDbConfig[]
 }
 
 /** 预加载向渲染暴露的受控 API 类型 */
@@ -180,6 +271,36 @@ export interface PreloadApi {
     importSettings: (json: string) => Promise<void>
     /** 在系统默认编辑器中打开 appData 目录下的文件 */
     openAppDataFile: (filename: string) => Promise<void>
+
+    // ----- RAG 相关 -----
+    /** 列出 RAG 应用配置 */
+    ragList: () => Promise<VectorDbConfig[]>
+    /** 获取默认 RAG 应用 */
+    ragGetDefault: () => Promise<VectorDbConfig | null>
+    /** 新增或更新 RAG 应用配置 */
+    ragUpsert: (cfg: VectorDbConfig) => Promise<void>
+    /** 删除 RAG 应用配置 */
+    ragDelete: (id: string) => Promise<void>
+    /** 设置默认 RAG 应用 */
+    ragSetDefault: (id: string) => Promise<void>
+    /** 启用/禁用 RAG 应用 */
+    ragToggleEnabled: (id: string, enabled: boolean) => Promise<void>
+    /** 校验 RAG 应用配置可用性 */
+    ragValidate: (cfg: VectorDbConfig) => Promise<RagValidationResult>
+    /** 导入单个文件到指定 collection */
+    ragImportFile: (
+      cfgId: string,
+      filePath: string,
+      collection: string,
+      split?: { chunkSize?: number; chunkOverlap?: number }
+    ) => Promise<void>
+    /** 导入目录到指定 collection */
+    ragImportDir: (
+      cfgId: string,
+      dirPath: string,
+      collection: string,
+      split?: { chunkSize?: number; chunkOverlap?: number }
+    ) => Promise<void>
   }
 }
 
