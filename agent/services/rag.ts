@@ -73,7 +73,7 @@ function normalizeConfig(input: VectorDbConfigLite): VectorDbConfigLite {
 }
 
 /**
- * 使用 HTTP 接口校验 Chroma 可用性与集合存在性（兼容多版本）。
+ * 使用 HTTP 接口校验 Chroma 可用性与集合存在性。
  */
 export async function validateRagConfig(cfg: VectorDbConfigLite): Promise<RagValidationResultLite> {
   const norm = normalizeConfig(cfg)
@@ -82,111 +82,45 @@ export async function validateRagConfig(cfg: VectorDbConfigLite): Promise<RagVal
 
   let heartbeat = false
   let defaultCollectionExists = false
-  let chromaVersion = 'unknown'
 
   const base = norm.connection.url.replace(/\/$/, '')
 
-  // 1. 检测 Chroma 版本（优先 v2，然后降级到 v1）
+  // 心跳
   try {
     const controller = new AbortController()
-    const t = setTimeout(() => controller.abort(), 3000)
-
-    // 先尝试 v2 版本的版本信息接口
-    let versionRes = await fetch(`${base}/api/v2/version`, { method: 'GET', signal: controller.signal }).catch(() => null)
-
-    // 如果 v2 不存在，尝试 v1 版本
-    if (!versionRes || !versionRes.ok) {
-      versionRes = await fetch(`${base}/api/v1/version`, { method: 'GET', signal: controller.signal }).catch(() => null)
-    }
-
-    // 如果版本接口都不存在，尝试心跳接口推测版本
-    if (!versionRes || !versionRes.ok) {
-      // 通过心跳接口的响应结构推测版本
-      const heartbeatRes = await fetch(`${base}/api/v1/heartbeat`, { method: 'GET', signal: controller.signal })
-      if (heartbeatRes.ok) {
-        chromaVersion = 'v1 (inferred)'
-        heartbeat = true
-      } else {
-        throw new Error(`无法连接到 Chroma 服务：${base}`)
-      }
-    } else {
-      const versionData: unknown = await versionRes.json()
-      chromaVersion = (versionData as any)?.version || (versionData as any)?.data?.version || 'unknown'
-      heartbeat = true
-    }
-
+    const t = setTimeout(() => controller.abort(), 5000)
+    const res = await fetch(`${base}/api/v1/heartbeat`, { method: 'GET', signal: controller.signal })
     clearTimeout(t)
+    if (res.ok) heartbeat = true
+    else errors.push(`心跳接口返回非 200：${res.status}`)
   } catch (e) {
-    errors.push(`版本检测失败：${e instanceof Error ? e.message : String(e)}`)
+    errors.push(`心跳检查失败：${e instanceof Error ? e.message : String(e)}`)
   }
 
-  // 2. 心跳检查（如果版本检测失败，则单独检查）
-  if (!heartbeat) {
-    try {
-      const controller = new AbortController()
-      const t = setTimeout(() => controller.abort(), 5000)
-      const res = await fetch(`${base}/api/v1/heartbeat`, { method: 'GET', signal: controller.signal })
-      clearTimeout(t)
-      if (res.ok) {
-        heartbeat = true
-      } else {
-        errors.push(`心跳接口返回非 200：${res.status}`)
-      }
-    } catch (e) {
-      errors.push(`心跳检查失败：${e instanceof Error ? e.message : String(e)}`)
-    }
-  }
-
-  // 3. 集合存在性检查（仅当心跳成功且配置了默认集合时）
+  // 集合存在性（配置了默认集合时）
   if (heartbeat && norm.defaultCollection) {
     try {
       const controller = new AbortController()
       const t = setTimeout(() => controller.abort(), 7000)
-
-      let collectionsUrl = ''
-      let responseFormat = 'v1' // 默认 v1 格式
-
-      // 根据检测到的版本选择合适的集合接口
-      if (chromaVersion.startsWith('v2') || chromaVersion.includes('v2')) {
-        collectionsUrl = `${base}/api/v2/collections`
-        responseFormat = 'v2'
-      } else {
-        collectionsUrl = `${base}/api/v1/collections`
-        responseFormat = 'v1'
-      }
-
-      const res = await fetch(collectionsUrl, { method: 'GET', signal: controller.signal })
+      const res = await fetch(`${base}/api/v1/collections`, { method: 'GET', signal: controller.signal })
       clearTimeout(t)
-
       if (res.ok) {
         const data: unknown = await res.json()
         let exists = false as boolean
-
-        if (responseFormat === 'v2') {
-          // v2 版本响应格式：{ data: { collections: [...] } }
-          const collections = (data as any)?.data?.collections || (data as any)?.collections || []
-          exists = Array.isArray(collections) &&
-            collections.some((c: { name?: string; id?: string } | null | undefined) =>
-              Boolean(c && (c.name === norm.defaultCollection || c.id === norm.defaultCollection))
-            )
-        } else {
-          // v1 版本响应格式：数组或 { collections: [...] }
-          if (Array.isArray(data)) {
-            exists = data.some((c: { name?: string; collection_name?: string } | null | undefined) =>
-              Boolean(c && (c.name === norm.defaultCollection || c.collection_name === norm.defaultCollection))
-            )
-          } else if (data && typeof data === 'object') {
-            const collectionsField = (data as { collections?: unknown }).collections
-            const itemsField = (data as { items?: unknown }).items
-            const arr: Array<{ name?: string; collection_name?: string }> = Array.isArray(collectionsField)
-              ? (collectionsField as Array<{ name?: string; collection_name?: string }>)
-              : Array.isArray(itemsField)
-              ? (itemsField as Array<{ name?: string; collection_name?: string }>)
-              : []
-            exists = arr.some((c) => c && (c.name === norm.defaultCollection || c.collection_name === norm.defaultCollection))
-          }
+        if (Array.isArray(data)) {
+          exists = data.some((c: { name?: string; collection_name?: string } | null | undefined) =>
+            Boolean(c && (c.name === norm.defaultCollection || c.collection_name === norm.defaultCollection))
+          )
+        } else if (data && typeof data === 'object') {
+          const collectionsField = (data as { collections?: unknown }).collections
+          const itemsField = (data as { items?: unknown }).items
+          const arr: Array<{ name?: string; collection_name?: string }> = Array.isArray(collectionsField)
+            ? (collectionsField as Array<{ name?: string; collection_name?: string }>)
+            : Array.isArray(itemsField)
+            ? (itemsField as Array<{ name?: string; collection_name?: string }>)
+            : []
+          exists = arr.some((c) => c && (c.name === norm.defaultCollection || c.collection_name === norm.defaultCollection))
         }
-
         defaultCollectionExists = exists
         if (!exists) warnings.push(`默认集合不存在：${norm.defaultCollection}`)
       } else {

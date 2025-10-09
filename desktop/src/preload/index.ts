@@ -7,6 +7,10 @@ const api: PreloadApi = {
   app: {
     getVersion: () => ipcRenderer.invoke(IPC_CHANNELS.APP_VERSION)
   },
+  util: {
+    pickFile: (options) => ipcRenderer.invoke(IPC_CHANNELS.UTIL_PICK_FILE, options),
+    pickDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.UTIL_PICK_DIR)
+  },
   agent: {
     chat: (message, options) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_CHAT, message, options),
     chatStream: (message, onEvent, options) => {

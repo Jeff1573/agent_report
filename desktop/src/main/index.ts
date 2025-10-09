@@ -226,6 +226,29 @@ app.whenReady().then(() => {
   // IPC 白名单：应用版本
   ipcMain.handle(IPC_CHANNELS.APP_VERSION, () => app.getVersion())
 
+  // IPC 白名单：通用文件/目录选择
+  ipcMain.handle(IPC_CHANNELS.UTIL_PICK_FILE, async (_event, options?: { filters?: Array<{ name: string; extensions: string[] }> }) => {
+    const win = BrowserWindow.getFocusedWindow()
+    if (!win) return null
+    const { dialog } = await import('electron')
+    const res = await dialog.showOpenDialog(win, {
+      properties: ['openFile'],
+      filters: options?.filters
+    })
+    if (res.canceled || res.filePaths.length === 0) return null
+    return res.filePaths[0]
+  })
+  ipcMain.handle(IPC_CHANNELS.UTIL_PICK_DIR, async () => {
+    const win = BrowserWindow.getFocusedWindow()
+    if (!win) return null
+    const { dialog } = await import('electron')
+    const res = await dialog.showOpenDialog(win, {
+      properties: ['openDirectory']
+    })
+    if (res.canceled || res.filePaths.length === 0) return null
+    return res.filePaths[0]
+  })
+
   // IPC 白名单：Agent 相关
   ipcMain.handle(IPC_CHANNELS.AGENT_CHAT, async (_event, message: string, options) => {
     return agentService.chat(message, options)

@@ -10,6 +10,9 @@ export const IPC_CHANNELS = {
   AGENT_CHAT: 'agent/chat',
   AGENT_CHAT_STREAM: 'agent/chat/stream',
   AGENT_STOP: 'agent/stop',
+  // 通用工具
+  UTIL_PICK_FILE: 'util/pickFile',
+  UTIL_PICK_DIR: 'util/pickDir',
   // 会话历史相关
   HISTORY_SAVE: 'history/save',
   HISTORY_LOAD: 'history/load',
@@ -227,6 +230,12 @@ export interface PreloadApi {
   app: {
     /** 获取应用版本号（来自主进程 app.getVersion） */
     getVersion: () => Promise<string>
+  }
+  util: {
+    /** 选择单个文件，返回绝对路径或 null */
+    pickFile: (options?: { filters?: Array<{ name: string; extensions: string[] }> }) => Promise<string | null>
+    /** 选择单个目录，返回绝对路径或 null */
+    pickDirectory: () => Promise<string | null>
   }
   agent: {
     /** 发送聊天消息（非流式） */
