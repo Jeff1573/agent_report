@@ -504,38 +504,42 @@ export const AgentChat: React.FC = () => {
                   }}
                   style={{ width: 220, marginRight: 8 }}
                   options={modelList.map(m => ({ label: `${m.name} (${m.model})`, value: m.id }))}
+                  disabled={isLoading}
                 />
-                <Tooltip title="设置">
+                <Tooltip title={isLoading ? "正在接收响应，请稍候..." : "设置"}>
                   <Button
                     icon={<SettingOutlined />}
                     onClick={() => navigate('/settings')}
                     type="text"
                     size="small"
+                    disabled={isLoading}
                   />
                 </Tooltip>
-                <Tooltip title="历史对话">
+                <Tooltip title={isLoading ? "正在接收响应，请稍候..." : "历史对话"}>
                   <Button
                     icon={<HistoryOutlined />}
                     onClick={() => setHistoryVisible(true)}
                     type="text"
                     size="small"
+                    disabled={isLoading}
                   />
                 </Tooltip>
-                <Tooltip title="新建对话">
+                <Tooltip title={isLoading ? "正在接收响应，请稍候..." : "新建对话"}>
                   <Button
                     icon={<PlusOutlined />}
                     onClick={handleNewChat}
                     type="text"
                     size="small"
+                    disabled={isLoading}
                   />
                 </Tooltip>
-                <Tooltip title="清空对话">
+                <Tooltip title={isLoading ? "正在接收响应，请稍候..." : "清空对话"}>
                   <Button
                     icon={<DeleteOutlined />}
                     onClick={handleClearChat}
                     type="text"
                     danger
-                    disabled={messages.length === 0}
+                    disabled={messages.length === 0 || isLoading}
                     size="small"
                   />
                 </Tooltip>
