@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Button, Card, Descriptions, Divider, Form, Input, InputNumber, List, Modal, Space, Typography, message, Upload, Tag, Tooltip, Switch, Tabs } from 'antd'
+import { Button, Card, Descriptions, Divider, Form, Input, InputNumber, List, Modal, Space, Typography, message, Upload, Tag, Tooltip, Switch, Tabs, Select } from 'antd'
 import { LeftOutlined, PlusOutlined, EditOutlined, DeleteOutlined, CheckOutlined, UploadOutlined, DownloadOutlined, SettingOutlined, CheckCircleOutlined, CloseCircleOutlined, FolderOpenOutlined, FileAddOutlined } from '@ant-design/icons'
 import type { ModelConfig, VectorDbConfig, RagValidationResult } from '../../../../shared/ipc'
 import { useNavigate } from 'react-router-dom'
@@ -672,28 +672,101 @@ export const SettingsPage: React.FC = () => {
           </Form.Item>
 
           <Divider orientation="left">Embeddings</Divider>
-          <Form.Item name={["embeddings", "provider"]} label="提供商" initialValue="openai">
-            <Input placeholder="openai 或 gemini" />
+          <Form.Item name={["embeddings", "provider"]} label="提供商" initialValue="openai" tooltip="向量嵌入模型的提供商">
+            <Select
+              options={[
+                { label: 'OpenAI', value: 'openai' },
+                { label: 'Google Gemini', value: 'gemini' }
+              ]}
+              placeholder="选择提供商"
+            />
           </Form.Item>
-          <Form.Item name={["embeddings", "model"]} label="模型名">
-            <Input placeholder="text-embedding-3-small / gemini-embedding-001" />
+          <Form.Item 
+            noStyle 
+            shouldUpdate={(prevValues, currentValues) => 
+              prevValues.embeddings?.provider !== currentValues.embeddings?.provider
+            }
+          >
+            {({ getFieldValue }) => {
+              const provider = getFieldValue(['embeddings', 'provider']) || 'openai'
+              const placeholder = provider === 'openai' 
+                ? 'text-embedding-3-small / text-embedding-3-large' 
+                : 'text-embedding-004 / embedding-001'
+              return (
+                <Form.Item name={["embeddings", "model"]} label="模型名" tooltip={provider === 'openai' ? '推荐使用 text-embedding-3-small' : '推荐使用 text-embedding-004'}>
+                  <Input placeholder={placeholder} />
+                </Form.Item>
+              )
+            }}
           </Form.Item>
           <Form.Item name={["embeddings", "apiKey"]} label="API Key（可选）">
             <Input.Password placeholder="留空走环境变量或界面模型配置" autoComplete="off" />
           </Form.Item>
 
           <Divider orientation="left">检索参数</Divider>
-          <Form.Item name={["retriever", "k"]} label="k（Top K）" initialValue={4}>
+          <Form.Item 
+            name={["retriever", "k"]} 
+            label="k（Top K）" 
+            initialValue={4}
+            tooltip="返回最相关的Top K个文档块，推荐3-10，默认4"
+          >
             <InputNumber min={1} max={50} style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name={["retriever", "searchType"]} label="搜索类型" initialValue="similarity">
-            <Input placeholder="similarity 或 mmr" />
+          <Form.Item 
+            name={["retriever", "searchType"]} 
+            label="搜索类型" 
+            initialValue="similarity"
+            tooltip="similarity适合精准查询，mmr提供多样性避免重复"
+          >
+            <Select
+              options={[
+                { label: 'Similarity（相似度）', value: 'similarity' },
+                { label: 'MMR（最大边际相关性）', value: 'mmr' }
+              ]}
+              placeholder="选择搜索类型"
+            />
           </Form.Item>
-          <Form.Item name={["retriever", "mmrLambda"]} label="MMR λ" initialValue={0.5}>
-            <InputNumber min={0} max={1} step={0.1} style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name={["retriever", "fetchK"]} label="fetchK" initialValue={32}>
-            <InputNumber min={1} max={500} style={{ width: '100%' }} />
+          <Form.Item 
+            noStyle 
+            shouldUpdate={(prevValues, currentValues) => 
+              prevValues.retriever?.searchType !== currentValues.retriever?.searchType
+            }
+          >
+            {({ getFieldValue }) => {
+              const searchType = getFieldValue(['retriever', 'searchType']) || 'similarity'
+              const isMmr = searchType === 'mmr'
+              return (
+                <>
+                  <Form.Item 
+                    name={["retriever", "mmrLambda"]} 
+                    label="MMR λ（Lambda）" 
+                    initialValue={0.5}
+                    tooltip={isMmr ? "平衡相关性和多样性：0=完全多样性，1=完全相关性，推荐0.5-0.7" : "仅在MMR模式下生效"}
+                  >
+                    <InputNumber 
+                      min={0} 
+                      max={1} 
+                      step={0.1} 
+                      style={{ width: '100%' }} 
+                      disabled={!isMmr}
+                    />
+                  </Form.Item>
+                  <Form.Item 
+                    name={["retriever", "fetchK"]} 
+                    label="fetchK" 
+                    initialValue={32}
+                    tooltip={isMmr ? "MMR候选池大小，推荐k的5-8倍" : "仅在MMR模式下生效"}
+                  >
+                    <InputNumber 
+                      min={1} 
+                      max={500} 
+                      style={{ width: '100%' }} 
+                      disabled={!isMmr}
+                    />
+                  </Form.Item>
+                </>
+              )
+            }}
           </Form.Item>
 
           <Form.Item name="enabled" label="启用" valuePropName="checked" initialValue={true}>

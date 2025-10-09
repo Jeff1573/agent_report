@@ -2,7 +2,7 @@
 /**
  * 文档说明：RAG（Chroma）配置校验与入库服务（供桌面主进程调用）。
  * - 职责：
- *   1) 校验 RAG 配置（HTTP 心跳与集合存在性检查）
+ *   1) 校验 RAG 配置（HTTP 心跳与集合存在性检查，兼容 v2/v1）
  *   2) 基于传入配置执行文件/目录入库（设置临时环境变量 → 复用 storage.ingestFile）
  * - 设计：主进程仅做 IPC 转发，不承载 AI/RAG 逻辑；本模块负责所有实现。
  */
@@ -10,12 +10,18 @@
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 
+/**
+ * 嵌入模型基础配置（精简版）。
+ */
 export interface EmbeddingsConfigLite {
   provider: 'openai' | 'gemini'
   model?: string
   apiKey?: string
 }
 
+/**
+ * 检索器配置（精简版）。
+ */
 export interface RetrieverConfigLite {
   k?: number
   searchType?: 'similarity' | 'mmr'
@@ -23,6 +29,9 @@ export interface RetrieverConfigLite {
   fetchK?: number
 }
 
+/**
+ * 向量数据库（Chroma）配置（精简版）。
+ */
 export interface VectorDbConfigLite {
   id?: string
   name?: string
@@ -37,12 +46,87 @@ export interface VectorDbConfigLite {
   updatedAt?: number
 }
 
+/**
+ * RAG 配置校验结果（精简版）。
+ */
 export interface RagValidationResultLite {
   ok: boolean
   errors: string[]
   warnings?: string[]
   info?: { heartbeat?: boolean; defaultCollectionExists?: boolean }
   timestamp: number
+}
+
+/**
+ * 构建 Chroma REST API 的完整 URL，支持 v1/v2。
+ * - 规范化 base 路径，去除末尾斜杠
+ * - 去除末尾已包含的 /api/vN 片段，避免重复
+ * - 统一追加 /api/{version}/{endpoint}
+ *
+ * @param {string} baseUrl - 基础地址，例如 http://localhost:8000 或 http://host/base
+ * @param {'v1'|'v2'} version - API 版本
+ * @param {string} endpoint - 端点名称，例如 heartbeat 或 collections
+ * @returns {string} 完整的请求 URL
+ */
+function buildApiUrl(baseUrl: string, version: 'v1' | 'v2', endpoint: string): string {
+  const safeEndpoint = endpoint.replace(/^\/+/, '')
+  try {
+    const url = new URL(baseUrl)
+    const path = (url.pathname || '').replace(/\/+$/, '')
+    const withoutApi = path.replace(/\/(api\/v\d+)(?:\/)?$/, '')
+    const joined = `${withoutApi}/api/${version}/${safeEndpoint}`.replace(/\/+$/, '')
+    url.pathname = joined
+    return url.toString()
+  } catch {
+    const trimmed = baseUrl.replace(/\/+$/, '')
+    return `${trimmed}/api/${version}/${safeEndpoint}`
+  }
+}
+
+/**
+ * 从可能的响应结构中提取集合条目数组。
+ * - 兼容 Array 顶层返回，或对象中的 collections/items/data/results/result
+ *
+ * @param {unknown} json - 原始 JSON 数据
+ * @returns {unknown[]} 集合条目数组
+ */
+function extractCollectionsArray(json: unknown): unknown[] {
+  if (Array.isArray(json)) return json
+  if (json && typeof json === 'object') {
+    const obj = json as Record<string, unknown>
+    const tryKeys = ['collections', 'items', 'data', 'results', 'result']
+    for (const key of tryKeys) {
+      const val = obj[key]
+      if (Array.isArray(val)) return val
+      if (key === 'data' && val && typeof val === 'object') {
+        const nested = extractCollectionsArray(val)
+        if (Array.isArray(nested) && nested.length > 0) return nested
+      }
+    }
+  }
+  return []
+}
+
+/**
+ * 判断集合列表中是否存在目标集合名。
+ * - 支持元素为字符串或对象（name/collection_name）
+ *
+ * @param {unknown[]} entries - 集合条目数组
+ * @param {string} targetName - 目标集合名
+ * @returns {boolean} 是否存在
+ */
+function hasCollection(entries: unknown[], targetName: string): boolean {
+  for (const entry of entries) {
+    if (typeof entry === 'string') {
+      if (entry === targetName) return true
+    } else if (entry && typeof entry === 'object') {
+      const e = entry as { name?: unknown; collection_name?: unknown }
+      const name = typeof e.name === 'string' ? e.name : undefined
+      const cname = typeof e.collection_name === 'string' ? e.collection_name : undefined
+      if (name === targetName || cname === targetName) return true
+    }
+  }
+  return false
 }
 
 function assertNonEmpty(text: string, name: string): void {
@@ -87,12 +171,26 @@ export async function validateRagConfig(cfg: VectorDbConfigLite): Promise<RagVal
 
   // 心跳
   try {
-    const controller = new AbortController()
-    const t = setTimeout(() => controller.abort(), 5000)
-    const res = await fetch(`${base}/api/v1/heartbeat`, { method: 'GET', signal: controller.signal })
-    clearTimeout(t)
-    if (res.ok) heartbeat = true
-    else errors.push(`心跳接口返回非 200：${res.status}`)
+    // 优先 v2，失败降级 v1
+    const hbErrors: string[] = []
+    async function tryHeartbeat(version: 'v2' | 'v1'): Promise<boolean> {
+      const url = buildApiUrl(base, version, 'heartbeat')
+      const controller = new AbortController()
+      const t = setTimeout(() => controller.abort(), 5000)
+      try {
+        const res = await fetch(url, { method: 'GET', signal: controller.signal })
+        clearTimeout(t)
+        if (res.ok) return true
+        hbErrors.push(`/${version}/heartbeat 状态码 ${res.status}`)
+        return false
+      } catch (err) {
+        clearTimeout(t)
+        hbErrors.push(`/${version}/heartbeat 异常：${err instanceof Error ? err.message : String(err)}`)
+        return false
+      }
+    }
+    heartbeat = (await tryHeartbeat('v2')) || (await tryHeartbeat('v1'))
+    if (!heartbeat) errors.push(`心跳检查失败：${hbErrors.join(' | ')}`)
   } catch (e) {
     errors.push(`心跳检查失败：${e instanceof Error ? e.message : String(e)}`)
   }
@@ -100,31 +198,31 @@ export async function validateRagConfig(cfg: VectorDbConfigLite): Promise<RagVal
   // 集合存在性（配置了默认集合时）
   if (heartbeat && norm.defaultCollection) {
     try {
-      const controller = new AbortController()
-      const t = setTimeout(() => controller.abort(), 7000)
-      const res = await fetch(`${base}/api/v1/collections`, { method: 'GET', signal: controller.signal })
-      clearTimeout(t)
-      if (res.ok) {
-        const data: unknown = await res.json()
-        let exists = false as boolean
-        if (Array.isArray(data)) {
-          exists = data.some((c: { name?: string; collection_name?: string } | null | undefined) =>
-            Boolean(c && (c.name === norm.defaultCollection || c.collection_name === norm.defaultCollection))
-          )
-        } else if (data && typeof data === 'object') {
-          const collectionsField = (data as { collections?: unknown }).collections
-          const itemsField = (data as { items?: unknown }).items
-          const arr: Array<{ name?: string; collection_name?: string }> = Array.isArray(collectionsField)
-            ? (collectionsField as Array<{ name?: string; collection_name?: string }>)
-            : Array.isArray(itemsField)
-            ? (itemsField as Array<{ name?: string; collection_name?: string }>)
-            : []
-          exists = arr.some((c) => c && (c.name === norm.defaultCollection || c.collection_name === norm.defaultCollection))
+      async function listCollections(version: 'v2' | 'v1'): Promise<unknown | null> {
+        const url = buildApiUrl(base, version, 'collections')
+        const controller = new AbortController()
+        const t = setTimeout(() => controller.abort(), 7000)
+        try {
+          const res = await fetch(url, { method: 'GET', signal: controller.signal })
+          clearTimeout(t)
+          if (!res.ok) return null
+          return (await res.json()) as unknown
+        } catch {
+          clearTimeout(t)
+          return null
         }
+      }
+
+      let data: unknown | null = await listCollections('v2')
+      if (data == null) data = await listCollections('v1')
+
+      if (data != null) {
+        const entries = extractCollectionsArray(data)
+        const exists = hasCollection(entries, norm.defaultCollection)
         defaultCollectionExists = exists
         if (!exists) warnings.push(`默认集合不存在：${norm.defaultCollection}`)
       } else {
-        warnings.push(`无法获取集合列表（${res.status}），跳过集合存在性检查`)
+        warnings.push(`无法获取集合列表（v2/v1 均失败），跳过集合存在性检查`)
       }
     } catch (e) {
       warnings.push(`集合存在性检查失败：${e instanceof Error ? e.message : String(e)}`)

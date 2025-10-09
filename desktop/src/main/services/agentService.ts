@@ -195,6 +195,15 @@ export async function chatStream(
       await settingsService.setActiveModelConfig(options.modelConfigId)
     }
 
+    // 会话级 RAG 应用选择：在 agent 运行前应用到 env（由 agent 侧读取 settings.json）
+    try {
+      // @ts-ignore - 运行时导入 agent 模块
+      const { applyRagSelection } = await import('agent/utils/rag-bridge')
+      applyRagSelection(options?.ragEnabled, options?.ragConfigId, options?.ragCollection)
+    } catch (e) {
+      console.warn('[AgentService] 应用 RAG 选择失败（忽略）', e)
+    }
+
     // 使用 events 模式（更适合流式 UI）
     const stream = (rt.streamEvents as (msg: string, opts?: { summary?: boolean; threadId?: string }) => AsyncGenerator<unknown>)(message, streamOptions)
 

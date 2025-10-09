@@ -8,8 +8,8 @@
  */
 
 import React, { useState, useRef, useEffect, JSX } from 'react'
-import { Input, Button, Card, Space, Typography, Tag, Spin, message as antMessage, Tooltip, Modal, Select, Switch } from 'antd'
-import { SendOutlined, StopOutlined, RobotOutlined, UserOutlined, ToolOutlined, PlusOutlined, DeleteOutlined, HistoryOutlined, SettingOutlined } from '@ant-design/icons'
+import { Input, Button, Card, Space, Typography, Tag, Spin, message as antMessage, Tooltip, Modal, Select, Switch, Form } from 'antd'
+import { SendOutlined, StopOutlined, RobotOutlined, UserOutlined, ToolOutlined, PlusOutlined, DeleteOutlined, HistoryOutlined, SettingOutlined, DatabaseOutlined } from '@ant-design/icons'
 import type { AgentStreamEvent, SessionData } from '../../../../shared/ipc'
 import { MarkdownMessage } from './MarkdownMessage'
 import { HistorySidebar } from './HistorySidebar'
@@ -83,6 +83,8 @@ export const AgentChat: React.FC = () => {
   const [ragEnabled, setRagEnabled] = useState<boolean>(false)
   const [ragConfigId, setRagConfigId] = useState<string | undefined>(undefined)
   const [ragCollection, setRagCollection] = useState<string | undefined>(undefined)
+  const [ragModalOpen, setRagModalOpen] = useState(false)
+  const [ragForm] = Form.useForm<{ enabled: boolean; configId?: string; collection?: string }>()
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // 自动滚动到底部
@@ -124,8 +126,8 @@ export const AgentChat: React.FC = () => {
     (async () => {
       try {
         const list = await window.api.settings.ragList()
-        const enabled = Array.isArray(list) ? list.filter((x: any) => x?.enabled) : []
-        setRagList(enabled.map((x: any) => ({ id: String(x.id), name: String(x.name || x.id), enabled: true })))
+        const enabled = Array.isArray(list) ? list.filter((x: { enabled?: boolean }) => x?.enabled) : []
+        setRagList(enabled.map((x: { id: string; name?: string }) => ({ id: String(x.id), name: String(x.name || x.id), enabled: true })))
         const def = await window.api.settings.ragGetDefault()
         if (def && def.enabled) {
           setRagEnabled(true)
@@ -502,6 +504,36 @@ export const AgentChat: React.FC = () => {
 
   return (
     <>
+      {/* RAG 设置弹窗 */}
+      <Modal
+        title="RAG 设置"
+        open={ragModalOpen}
+        onCancel={() => setRagModalOpen(false)}
+        onOk={() => {
+          const v = ragForm.getFieldsValue()
+          setRagEnabled(Boolean(v.enabled))
+          setRagConfigId(v.configId)
+          setRagCollection((v.collection || '').trim() || undefined)
+          setRagModalOpen(false)
+        }}
+        okText="应用"
+      >
+        <Form form={ragForm} layout="vertical" initialValues={{ enabled: ragEnabled, configId: ragConfigId, collection: ragCollection }}>
+          <Form.Item name="enabled" label="启用 RAG" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item name="configId" label="RAG 应用">
+            <Select
+              options={ragList.map(x => ({ label: x.name, value: x.id }))}
+              placeholder="选择RAG应用"
+              disabled={!ragForm.getFieldValue('enabled')}
+            />
+          </Form.Item>
+          <Form.Item name="collection" label="collection（可选）">
+            <Input placeholder="覆盖默认集合名（可选）" disabled={!ragForm.getFieldValue('enabled')} />
+          </Form.Item>
+        </Form>
+      </Modal>
       {/* 历史对话侧边栏 */}
       <HistorySidebar
         visible={historyVisible}
@@ -544,32 +576,22 @@ export const AgentChat: React.FC = () => {
                     disabled={isLoading}
                   />
                 </Tooltip>
-              {/* 会话级 RAG 选择 */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Switch
+              <Tooltip title={isLoading ? "正在接收响应，请稍候..." : (ragEnabled ? `RAG已启用${ragCollection ? ` · ${ragCollection}` : ''}` : 'RAG 设置')}>
+                <Button
+                  icon={<DatabaseOutlined />}
+                  onClick={() => {
+                    ragForm.setFieldsValue({
+                      enabled: ragEnabled,
+                      configId: ragConfigId,
+                      collection: ragCollection
+                    })
+                    setRagModalOpen(true)
+                  }}
+                  type="text"
                   size="small"
-                  checked={ragEnabled}
-                  onChange={setRagEnabled}
                   disabled={isLoading}
                 />
-                <Select
-                  size="small"
-                  value={ragConfigId}
-                  placeholder="选择RAG应用"
-                  onChange={setRagConfigId}
-                  style={{ width: 160 }}
-                  options={ragList.map(x => ({ label: x.name, value: x.id }))}
-                  disabled={isLoading || !ragEnabled}
-                />
-                <Input
-                  size="small"
-                  placeholder="collection(可选)"
-                  value={ragCollection}
-                  onChange={(e) => setRagCollection(e.target.value)}
-                  style={{ width: 160 }}
-                  disabled={isLoading || !ragEnabled}
-                />
-              </div>
+              </Tooltip>
                 <Tooltip title={isLoading ? "正在接收响应，请稍候..." : "历史对话"}>
                   <Button
                     icon={<HistoryOutlined />}
