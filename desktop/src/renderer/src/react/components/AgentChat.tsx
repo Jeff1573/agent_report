@@ -8,7 +8,7 @@
  */
 
 import React, { useState, useRef, useEffect, JSX } from 'react'
-import { Input, Button, Card, Space, Typography, Tag, Spin, message as antMessage, Tooltip, Modal, Select } from 'antd'
+import { Input, Button, Card, Space, Typography, Tag, Spin, message as antMessage, Tooltip, Modal, Select, Switch } from 'antd'
 import { SendOutlined, StopOutlined, RobotOutlined, UserOutlined, ToolOutlined, PlusOutlined, DeleteOutlined, HistoryOutlined, SettingOutlined } from '@ant-design/icons'
 import type { AgentStreamEvent, SessionData } from '../../../../shared/ipc'
 import { MarkdownMessage } from './MarkdownMessage'
@@ -78,6 +78,11 @@ export const AgentChat: React.FC = () => {
   const [historyVisible, setHistoryVisible] = useState(false)
   const [modelList, setModelList] = useState<ModelConfig[]>([])
   const [activeModelId, setActiveModelId] = useState<string | undefined>(undefined)
+  // 会话级 RAG 选择状态
+  const [ragList, setRagList] = useState<Array<{ id: string; name: string; enabled: boolean }>>([])
+  const [ragEnabled, setRagEnabled] = useState<boolean>(false)
+  const [ragConfigId, setRagConfigId] = useState<string | undefined>(undefined)
+  const [ragCollection, setRagCollection] = useState<string | undefined>(undefined)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // 自动滚动到底部
@@ -112,6 +117,27 @@ export const AgentChat: React.FC = () => {
     }
     loadLastSession()
     loadModels()
+  }, [])
+
+  // 加载可用的 RAG 配置（仅启用项）
+  useEffect(() => {
+    (async () => {
+      try {
+        const list = await window.api.settings.ragList()
+        const enabled = Array.isArray(list) ? list.filter((x: any) => x?.enabled) : []
+        setRagList(enabled.map((x: any) => ({ id: String(x.id), name: String(x.name || x.id), enabled: true })))
+        const def = await window.api.settings.ragGetDefault()
+        if (def && def.enabled) {
+          setRagEnabled(true)
+          setRagConfigId(def.id)
+          if (typeof def.defaultCollection === 'string' && def.defaultCollection.trim()) {
+            setRagCollection(def.defaultCollection)
+          }
+        }
+      } catch {
+        // 忽略加载失败，不阻断聊天
+      }
+    })()
   }, [])
 
   // 消息变化时自动保存
@@ -187,7 +213,10 @@ export const AgentChat: React.FC = () => {
         { 
           summary: false,
           threadId: 'default-thread',
-          modelConfigId: activeModelId
+          modelConfigId: activeModelId,
+          ragEnabled: ragEnabled,
+          ragConfigId: ragEnabled ? ragConfigId : undefined,
+          ragCollection: ragEnabled ? (ragCollection || undefined) : undefined
         }
       )
     } catch (error) {
@@ -515,6 +544,32 @@ export const AgentChat: React.FC = () => {
                     disabled={isLoading}
                   />
                 </Tooltip>
+              {/* 会话级 RAG 选择 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Switch
+                  size="small"
+                  checked={ragEnabled}
+                  onChange={setRagEnabled}
+                  disabled={isLoading}
+                />
+                <Select
+                  size="small"
+                  value={ragConfigId}
+                  placeholder="选择RAG应用"
+                  onChange={setRagConfigId}
+                  style={{ width: 160 }}
+                  options={ragList.map(x => ({ label: x.name, value: x.id }))}
+                  disabled={isLoading || !ragEnabled}
+                />
+                <Input
+                  size="small"
+                  placeholder="collection(可选)"
+                  value={ragCollection}
+                  onChange={(e) => setRagCollection(e.target.value)}
+                  style={{ width: 160 }}
+                  disabled={isLoading || !ragEnabled}
+                />
+              </div>
                 <Tooltip title={isLoading ? "正在接收响应，请稍候..." : "历史对话"}>
                   <Button
                     icon={<HistoryOutlined />}

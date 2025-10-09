@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Button, Card, Descriptions, Divider, Form, Input, InputNumber, List, Modal, Space, Typography, message, Upload, Tag, Tooltip, Switch, Tabs } from 'antd'
-import { LeftOutlined, PlusOutlined, EditOutlined, DeleteOutlined, CheckOutlined, UploadOutlined, DownloadOutlined, SettingOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons'
+import { LeftOutlined, PlusOutlined, EditOutlined, DeleteOutlined, CheckOutlined, UploadOutlined, DownloadOutlined, SettingOutlined, CheckCircleOutlined, CloseCircleOutlined, FolderOpenOutlined, FileAddOutlined } from '@ant-design/icons'
 import type { ModelConfig, VectorDbConfig, RagValidationResult } from '../../../../shared/ipc'
 import { useNavigate } from 'react-router-dom'
 
@@ -23,6 +23,12 @@ export const SettingsPage: React.FC = () => {
   const [ragEditing, setRagEditing] = useState<VectorDbConfig | null>(null)
   const [ragForm] = Form.useForm<VectorDbConfig>()
   const [ragValidating, setRagValidating] = useState(false)
+  // 导入弹窗状态
+  const [importModalOpen, setImportModalOpen] = useState(false)
+  const [importMode, setImportMode] = useState<'file' | 'dir'>('file')
+  const [importTarget, setImportTarget] = useState<VectorDbConfig | null>(null)
+  const [importPath, setImportPath] = useState<string>('')
+  const [importForm] = Form.useForm<{ collection: string; chunkSize?: number; chunkOverlap?: number }>()
 
   const load = async (): Promise<void> => {
     setLoading(true)
@@ -358,6 +364,71 @@ export const SettingsPage: React.FC = () => {
     }
   }
 
+  // ---------------- RAG：导入文件/目录 ----------------
+  const onRagImportFile = async (cfg: VectorDbConfig): Promise<void> => {
+    try {
+      const picked = await window.api.util.pickFile({
+        filters: [
+          { name: 'Documents', extensions: ['md', 'txt', 'pdf', 'docx'] }
+        ]
+      })
+      if (!picked) return
+      setImportMode('file')
+      setImportTarget(cfg)
+      setImportPath(picked)
+      importForm.setFieldsValue({
+        collection: cfg.defaultCollection || '',
+        chunkSize: 1000,
+        chunkOverlap: 150
+      })
+      setImportModalOpen(true)
+    } catch (e) {
+      message.error('选择文件失败')
+    }
+  }
+
+  const onRagImportDir = async (cfg: VectorDbConfig): Promise<void> => {
+    try {
+      const picked = await window.api.util.pickDirectory()
+      if (!picked) return
+      setImportMode('dir')
+      setImportTarget(cfg)
+      setImportPath(picked)
+      importForm.setFieldsValue({
+        collection: cfg.defaultCollection || '',
+        chunkSize: 1000,
+        chunkOverlap: 150
+      })
+      setImportModalOpen(true)
+    } catch (e) {
+      message.error('选择目录失败')
+    }
+  }
+
+  const handleImportOk = async (): Promise<void> => {
+    try {
+      const values = await importForm.validateFields()
+      const cfg = importTarget
+      if (!cfg) return
+      if (importMode === 'file') {
+        await window.api.settings.ragImportFile(cfg.id, importPath, values.collection.trim(), {
+          chunkSize: values.chunkSize,
+          chunkOverlap: values.chunkOverlap
+        })
+      } else {
+        await window.api.settings.ragImportDir(cfg.id, importPath, values.collection.trim(), {
+          chunkSize: values.chunkSize,
+          chunkOverlap: values.chunkOverlap
+        })
+      }
+      message.success('已提交导入任务')
+      setImportModalOpen(false)
+    } catch (e) {
+      // 表单校验或调用失败
+      if (e instanceof Error) message.error(e.message)
+    }
+  }
+
   return (
     <div style={{ padding: 16 }}>
       <Button type="link" icon={<LeftOutlined />} onClick={() => navigate('/')}>返回</Button>
@@ -482,6 +553,10 @@ export const SettingsPage: React.FC = () => {
                                   <Descriptions.Item label="嵌入">{item.embeddings?.provider || 'openai'}{item.embeddings?.model ? ` · ${item.embeddings.model}` : ''}</Descriptions.Item>
                                   <Descriptions.Item label="检索参数">k={item.retriever?.k ?? 4} · {item.retriever?.searchType || 'similarity'} · λ={item.retriever?.mmrLambda ?? 0.5} · fetchK={item.retriever?.fetchK ?? 32}</Descriptions.Item>
                                 </Descriptions>
+                                <Space>
+                                  <Button icon={<FileAddOutlined />} onClick={() => onRagImportFile(item)}>导入文件</Button>
+                                  <Button icon={<FolderOpenOutlined />} onClick={() => onRagImportDir(item)}>导入目录</Button>
+                                </Space>
                               </Space>
                             }
                           />
@@ -540,6 +615,33 @@ export const SettingsPage: React.FC = () => {
             />
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* 导入弹窗 */}
+      <Modal
+        title={`导入${importMode === 'file' ? '文件' : '目录'}`}
+        open={importModalOpen}
+        onCancel={() => setImportModalOpen(false)}
+        onOk={handleImportOk}
+        okText="开始导入"
+      >
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <Descriptions size="small" column={1}>
+            <Descriptions.Item label="目标路径">{importPath || '-'}</Descriptions.Item>
+            <Descriptions.Item label="RAG 应用">{importTarget?.name || '-'}</Descriptions.Item>
+          </Descriptions>
+          <Form form={importForm} layout="vertical">
+            <Form.Item name="collection" label="集合名称" rules={[{ required: true, message: '请输入集合名称' }]}>
+              <Input placeholder="如：mindforge_kb（建议与入库一致）" />
+            </Form.Item>
+            <Form.Item name="chunkSize" label="切块大小" initialValue={1000}>
+              <InputNumber min={200} max={4000} step={100} style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="chunkOverlap" label="切块重叠" initialValue={150}>
+              <InputNumber min={0} max={1000} step={50} style={{ width: '100%' }} />
+            </Form.Item>
+          </Form>
+        </Space>
       </Modal>
 
       <Modal
