@@ -44,6 +44,9 @@ export default defineConfig({
         '@renderer': resolve('src/renderer/src')
       }
     },
-    plugins: [react()]
+    plugins: [react()],
+    server: {
+      host: '0.0.0.0',  // 明确指定监听 IPv4 地址
+    }
   }
 })
