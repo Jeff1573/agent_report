@@ -10,7 +10,7 @@ import { tool } from '@langchain/core/tools'
 import { formatDocumentsAsString } from 'langchain/util/document'
 import { buildChromaRetriever, resolveCollectionName, retrieveWithClientMMR } from '../services/storage.js'
 import { METADATA_KEYS } from '../services/metadataSchema.js'
-import { KB_COLLECTION, RAG_CTX_CHAR_LIMIT, KB_COLLECTION_WHITELIST, RERANK_ENABLED, RERANK_FETCHK, RERANK_LAMBDA } from '../config/env.js'
+import { RAG_CTX_CHAR_LIMIT } from '../config/env.js'
 import { logger } from '../utils/logger.js'
 
 /**
@@ -113,14 +113,60 @@ export const kbSearchTool = tool(
     fetchK?: number
     where?: Partial<Record<keyof typeof METADATA_KEYS, string>>
   }) => {
+    // 0) 执行时动态检查 RAG 配置（支持运行时启用，不需要重启）
+    // 直接从 process.env 读取，确保能获取到界面或 withRagEnv 动态设置的值
+    const chromaUrl = process.env.CHROMA_URL || process.env.CHROMADB_URL || ''
+    const embedProvider = (process.env.KB_EMBED_PROVIDER || 'openai').toLowerCase()
+    const embedModel = process.env.KB_EMBED_MODEL || ''
+    const openaiKey = process.env.OPENAI_API_KEY || ''
+    const googleKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || ''
+    
+    // 检查必需配置
+    const errors: string[] = []
+    if (!chromaUrl || chromaUrl.trim().length === 0) {
+      errors.push('- CHROMA_URL 未配置')
+    }
+    if (embedProvider === 'gemini') {
+      if (!googleKey || googleKey.trim().length === 0) {
+        errors.push('- GOOGLE_API_KEY 未配置（Gemini 嵌入模型需要）')
+      }
+    } else {
+      if (!embedModel || embedModel.trim().length === 0) {
+        errors.push('- KB_EMBED_MODEL 未配置（如：text-embedding-3-small）')
+      }
+      if (!openaiKey || openaiKey.trim().length === 0) {
+        errors.push('- OPENAI_API_KEY 未配置')
+      }
+    }
+    
+    if (errors.length > 0) {
+      const errorMsg = [
+        '❌ RAG 配置不完整，无法执行知识库检索：',
+        ...errors,
+        '',
+        '💡 请在界面「设置 → RAG 数据库」中完成配置，或在 .env 文件中设置相应环境变量。'
+      ].join('\n')
+      logger.warn('[kb_search] RAG 配置不完整', { errors })
+      throw new Error(errorMsg)
+    }
+    
     const normalizedWhere = normalizeWhere(where)
     // 1) 集合名上锁：默认仅允许 KB_COLLECTION；若配置白名单，则白名单 + KB_COLLECTION
-    const base = (KB_COLLECTION || '').trim()
+    // 从 process.env 动态读取，支持运行时配置
+    const base = (process.env.KB_COLLECTION || collection || '').trim()
     if (!base) {
-      throw new Error('未配置 KB_COLLECTION，无法执行内部检索')
+      throw new Error(
+        '❌ 未配置 KB_COLLECTION 或 collection 参数，无法执行内部检索。\n' +
+        '💡 请在界面「RAG 设置」中设置「collection」参数，或在 .env 中设置 KB_COLLECTION。'
+      )
     }
-    const whitelist = Array.isArray(KB_COLLECTION_WHITELIST) && KB_COLLECTION_WHITELIST.length > 0
-      ? new Set([base, ...KB_COLLECTION_WHITELIST])
+    // 动态读取白名单配置
+    const whitelistEnv = (process.env.KB_COLLECTION_WHITELIST || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+    const whitelist = whitelistEnv.length > 0
+      ? new Set([base, ...whitelistEnv])
       : new Set([base])
     const requested = (collection || '').trim()
     const locked = whitelist.has(requested) && requested ? requested : base
@@ -139,11 +185,16 @@ export const kbSearchTool = tool(
     let hits: any[] = []
     let fallback = false
 
-    // 3) 当“未指定/显式要求 mmr”且启用客户端重排时，优先走客户端 MMR；否则按后端能力或 similarity 尝试
-    if (defaultToClientMMR && RERANK_ENABLED) {
+    // 3) 当"未指定/显式要求 mmr"且启用客户端重排时，优先走客户端 MMR；否则按后端能力或 similarity 尝试
+    // 动态读取 RERANK 配置
+    const rerankEnabled = (process.env.RERANK_ENABLED ?? 'true').toLowerCase() !== 'false'
+    const rerankLambda = Number(process.env.RERANK_LAMBDA || 0.35)
+    const rerankFetchK = Number(process.env.RERANK_FETCHK || 128)
+    
+    if (defaultToClientMMR && rerankEnabled) {
       try {
-        const lambda = typeof mmrLambda === 'number' ? mmrLambda : (typeof RERANK_LAMBDA === 'number' ? RERANK_LAMBDA : 0.35)
-        const fetchKLocal = typeof fetchK === 'number' && fetchK > 0 ? fetchK : (typeof RERANK_FETCHK === 'number' && RERANK_FETCHK > 0 ? RERANK_FETCHK : Math.max(20, 4 * topK))
+        const lambda = typeof mmrLambda === 'number' ? mmrLambda : rerankLambda
+        const fetchKLocal = typeof fetchK === 'number' && fetchK > 0 ? fetchK : Math.max(rerankFetchK, Math.max(20, 4 * topK))
         hits = await retrieveWithClientMMR(usedCollection, query, { k: topK, fetchK: fetchKLocal, lambda, where: normalizedWhere })
         usedType = 'mmr(client)'
       } catch (e) {
@@ -168,8 +219,8 @@ export const kbSearchTool = tool(
       try {
         logger.info('[kb_search] 命中为空，触发无过滤退化重试', { where })
         if (usedType === 'mmr(client)') {
-          const lambda = typeof mmrLambda === 'number' ? mmrLambda : (typeof RERANK_LAMBDA === 'number' ? RERANK_LAMBDA : 0.35)
-          const fetchKLocal = typeof fetchK === 'number' && fetchK > 0 ? fetchK : (typeof RERANK_FETCHK === 'number' && RERANK_FETCHK > 0 ? RERANK_FETCHK : Math.max(20, 4 * topK))
+          const lambda = typeof mmrLambda === 'number' ? mmrLambda : rerankLambda
+          const fetchKLocal = typeof fetchK === 'number' && fetchK > 0 ? fetchK : Math.max(rerankFetchK, Math.max(20, 4 * topK))
           hits = await retrieveWithClientMMR(usedCollection, query, { k: topK, fetchK: fetchKLocal, lambda })
         } else {
           const retriever2 = await buildChromaRetriever(usedCollection, {
@@ -216,8 +267,8 @@ export const kbSearchTool = tool(
       search: {
         type: usedType,
         k: topK,
-        ...(defaultToClientMMR ? { fetchK: typeof fetchK === 'number' && fetchK > 0 ? fetchK : (typeof RERANK_FETCHK === 'number' && RERANK_FETCHK > 0 ? RERANK_FETCHK : Math.max(20, 4 * topK)) } : {}),
-        ...(defaultToClientMMR ? { lambda: typeof mmrLambda === 'number' ? mmrLambda : (typeof RERANK_LAMBDA === 'number' ? RERANK_LAMBDA : 0.35) } : {}),
+        ...(defaultToClientMMR ? { fetchK: typeof fetchK === 'number' && fetchK > 0 ? fetchK : Math.max(rerankFetchK, Math.max(20, 4 * topK)) } : {}),
+        ...(defaultToClientMMR ? { lambda: typeof mmrLambda === 'number' ? mmrLambda : rerankLambda } : {}),
         ...(normalizedWhere && !fallback ? { where: normalizedWhere } : {}),
         ...(fallback ? { fallback: true } : {})
       },

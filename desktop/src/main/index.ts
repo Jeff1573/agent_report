@@ -350,7 +350,8 @@ app.whenReady().then(() => {
       cfgId: string,
       filePath: string,
       collection: string,
-      split?: { chunkSize?: number; chunkOverlap?: number }
+      split?: { chunkSize?: number; chunkOverlap?: number },
+      options?: { forceMethod?: 'auto' | 'ast' | 'text' }
     ) => {
       if (!cfgId || !filePath || !collection) throw new Error('参数不完整')
       const cfgList = await settingsService.listVectorDbConfigs()
@@ -359,7 +360,7 @@ app.whenReady().then(() => {
       if (!cfg.enabled) throw new Error('该 RAG 配置未启用')
       // @ts-ignore 运行时动态导入 agent 实现
       const { ingestFileWithConfig } = await import('agent/services/rag')
-      await ingestFileWithConfig(cfg, filePath, collection, split)
+      return await ingestFileWithConfig(cfg, filePath, collection, split, options)
     }
   )
 
@@ -370,7 +371,8 @@ app.whenReady().then(() => {
       cfgId: string,
       dirPath: string,
       collection: string,
-      split?: { chunkSize?: number; chunkOverlap?: number }
+      split?: { chunkSize?: number; chunkOverlap?: number },
+      options?: { forceMethod?: 'auto' | 'ast' | 'text' }
     ) => {
       if (!cfgId || !dirPath || !collection) throw new Error('参数不完整')
       const cfgList = await settingsService.listVectorDbConfigs()
@@ -379,7 +381,7 @@ app.whenReady().then(() => {
       if (!cfg.enabled) throw new Error('该 RAG 配置未启用')
       // @ts-ignore 运行时动态导入 agent 实现
       const { ingestDirWithConfig } = await import('agent/services/rag')
-      await ingestDirWithConfig(cfg, dirPath, collection, split)
+      return await ingestDirWithConfig(cfg, dirPath, collection, split, options)
     }
   )
 

@@ -24,11 +24,7 @@ import { GoogleGenerativeAIEmbeddings } from '@langchain/google-genai'
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters'
 import {
   KB_STORAGE_ROOT,
-  KB_STORAGE_RAW_DIR,
-  KB_EMBED_MODEL,
-  KB_EMBED_PROVIDER,
-  GOOGLE_API_KEY,
-  CHROMA_URL
+  KB_STORAGE_RAW_DIR
 } from '../config/env.js'
 import { Buffer } from 'node:buffer'
 import { Stats } from 'node:fs'
@@ -89,7 +85,8 @@ function hashFilename(name: string): string {
 }
 
 function resolveRawPath(relative: string): string {
-  return path.resolve(KB_STORAGE_RAW_DIR || '', relative)
+  const runtimeRawDir = process.env.KB_STORAGE_RAW_DIR || KB_STORAGE_RAW_DIR
+  return path.resolve(runtimeRawDir || '', relative)
 }
 
 /**
@@ -112,7 +109,10 @@ export async function saveRawFile(
   buffer: Buffer,
   collectionName: string
 ): Promise<StoredFileMeta> {
-  if (!KB_STORAGE_RAW_DIR || !KB_STORAGE_ROOT) {
+  const runtimeRawDir = process.env.KB_STORAGE_RAW_DIR || KB_STORAGE_RAW_DIR
+  const runtimeRoot = process.env.KB_STORAGE_ROOT || KB_STORAGE_ROOT
+  
+  if (!runtimeRawDir || !runtimeRoot) {
     throw new Error('知识库存储目录未配置，当前环境禁用 RAG 入库功能')
   }
   if (!filename || filename.trim().length === 0) {
@@ -126,7 +126,7 @@ export async function saveRawFile(
   }
 
   const safeCollection = collectionName.replace(/[^a-zA-Z0-9_-]/g, '-')
-  const dir = path.resolve(KB_STORAGE_RAW_DIR, safeCollection)
+  const dir = path.resolve(runtimeRawDir, safeCollection)
   if (!fsSync.existsSync(dir)) {
     await fs.mkdir(dir, { recursive: true })
   }
@@ -139,7 +139,7 @@ export async function saveRawFile(
 
   await fs.writeFile(abs, buffer)
   const stat = (await fs.stat(abs)) as Stats
-  const relativePath = path.relative(KB_STORAGE_RAW_DIR, abs)
+  const relativePath = path.relative(runtimeRawDir, abs)
   return {
     filename,
     relativePath,
@@ -159,10 +159,11 @@ export async function saveRawFile(
  * @returns {Promise<FileDescriptor[]>} 文件描述符数组
  */
 export async function listRawFiles(collectionName?: string): Promise<FileDescriptor[]> {
-  if (!KB_STORAGE_RAW_DIR) {
+  const runtimeRawDir = process.env.KB_STORAGE_RAW_DIR || KB_STORAGE_RAW_DIR
+  if (!runtimeRawDir) {
     return []
   }
-  const root = KB_STORAGE_RAW_DIR
+  const root = runtimeRawDir
   if (!fsSync.existsSync(root)) {
     return []
   }
@@ -202,7 +203,8 @@ export async function listRawFiles(collectionName?: string): Promise<FileDescrip
  * @returns {Promise<Buffer>} 文件 Buffer
  */
 export async function readRawFile(relativePath: string): Promise<Buffer> {
-  if (!KB_STORAGE_RAW_DIR) {
+  const runtimeRawDir = process.env.KB_STORAGE_RAW_DIR || KB_STORAGE_RAW_DIR
+  if (!runtimeRawDir) {
     throw new Error('知识库原始目录未配置，无法读取文件')
   }
   const abs = resolveRawPath(relativePath)
@@ -219,7 +221,8 @@ export async function readRawFile(relativePath: string): Promise<Buffer> {
  * @returns {Promise<void>} Promise 实例
  */
 export async function removeRawFile(relativePath: string): Promise<void> {
-  if (!KB_STORAGE_RAW_DIR) {
+  const runtimeRawDir = process.env.KB_STORAGE_RAW_DIR || KB_STORAGE_RAW_DIR
+  if (!runtimeRawDir) {
     throw new Error('知识库原始目录未配置，无法删除文件')
   }
   const abs = resolveRawPath(relativePath)
@@ -237,7 +240,8 @@ export async function removeRawFile(relativePath: string): Promise<void> {
  * @returns {Promise<Document[]>} 文档数组
  */
 export async function loadDocumentsFromRaw(relativePath: string): Promise<Document[]> {
-  if (!KB_STORAGE_RAW_DIR) {
+  const runtimeRawDir = process.env.KB_STORAGE_RAW_DIR || KB_STORAGE_RAW_DIR
+  if (!runtimeRawDir) {
     throw new Error('知识库原始目录未配置，无法加载文档')
   }
   const abs = resolveRawPath(relativePath)
@@ -308,7 +312,8 @@ export async function splitDocuments(
   docs: Document[],
   options: SplitOptions = {}
 ): Promise<Document[]> {
-  if (!KB_STORAGE_ROOT) {
+  const runtimeRoot = process.env.KB_STORAGE_ROOT || KB_STORAGE_ROOT
+  if (!runtimeRoot) {
     throw new Error('知识库根目录未配置，无法执行文档切块')
   }
   const size =
@@ -384,17 +389,20 @@ async function ensureChromaCollection(
   embeddings: OpenAIEmbeddings | GoogleGenerativeAIEmbeddings,
   collectionName: string
 ) {
+  // 动态读取 CHROMA_URL，支持运行时配置
+  const chromaUrl = process.env.CHROMA_URL || process.env.CHROMADB_URL || ''
+  
   try {
     return await Chroma.fromExistingCollection(embeddings, {
       collectionName,
-      url: CHROMA_URL || undefined
+      url: chromaUrl || undefined
     })
   } catch (error) {
     if (error instanceof Error && error.message.includes('does not exist')) {
       // 创建空集合时确保嵌入函数正确传递
       return await Chroma.fromDocuments([], embeddings, {
         collectionName,
-        url: CHROMA_URL || undefined
+        url: chromaUrl || undefined
       })
     }
     throw error
@@ -412,13 +420,16 @@ export async function openChromaReadonly(
   embeddings: OpenAIEmbeddings | GoogleGenerativeAIEmbeddings,
   collectionName: string
 ): Promise<Chroma> {
-  if (!CHROMA_URL || CHROMA_URL.trim().length === 0) {
+  // 动态读取 CHROMA_URL，支持运行时配置
+  const chromaUrl = process.env.CHROMA_URL || process.env.CHROMADB_URL || ''
+  
+  if (!chromaUrl || chromaUrl.trim().length === 0) {
     throw new Error('未配置 CHROMA_URL，无法连接 Chroma 服务')
   }
   try {
     return await Chroma.fromExistingCollection(embeddings, {
       collectionName,
-      url: CHROMA_URL || undefined
+      url: chromaUrl || undefined
     })
   } catch (error) {
     if (error instanceof Error && error.message.includes('does not exist')) {
@@ -444,7 +455,10 @@ export async function upsertToChroma(
   collectionName: string,
   docs: Document[]
 ): Promise<VectorUpsertResult> {
-  if (!KB_STORAGE_ROOT || !KB_STORAGE_RAW_DIR) {
+  const runtimeRoot = process.env.KB_STORAGE_ROOT || KB_STORAGE_ROOT
+  const runtimeRawDir = process.env.KB_STORAGE_RAW_DIR || KB_STORAGE_RAW_DIR
+  
+  if (!runtimeRoot || !runtimeRawDir) {
     throw new Error('知识库目录未配置，无法写入向量库')
   }
   if (!collectionName || collectionName.trim().length === 0) {
@@ -458,7 +472,8 @@ export async function upsertToChroma(
   const embeddings = makeEmbeddings()
 
   // 检测嵌入模型是否支持批量嵌入（Gemini 某些版本有 bug）
-  const useBatchEmbedding = KB_EMBED_PROVIDER === 'gemini'
+  const embedProvider = (process.env.KB_EMBED_PROVIDER || 'openai').toLowerCase()
+  const useBatchEmbedding = embedProvider === 'gemini'
     ? await testBatchEmbedding(embeddings, docs[0].pageContent)
     : true
   
@@ -715,7 +730,11 @@ export interface IngestFileParams {
  * @returns {Promise<SaveFileResult>} 保存结果
  */
 export async function ingestFile(params: IngestFileParams): Promise<SaveFileResult> {
-  if (!KB_STORAGE_ROOT || !KB_STORAGE_RAW_DIR) {
+  // 使用运行时环境变量而非导入时常量，以支持 withRagEnv 动态配置
+  const runtimeRoot = process.env.KB_STORAGE_ROOT || KB_STORAGE_ROOT
+  const runtimeRawDir = process.env.KB_STORAGE_RAW_DIR || KB_STORAGE_RAW_DIR
+  
+  if (!runtimeRoot || !runtimeRawDir) {
     throw new Error('知识库目录未配置，无法执行入库流程')
   }
   const { collectionName, filename, buffer, split } = params

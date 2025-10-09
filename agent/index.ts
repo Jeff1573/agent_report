@@ -4,6 +4,7 @@
 import { logger, createLogger } from './utils/logger.js';
 import { createAgentRuntime } from './runtime/index.js';
 import { THREAD_ID_FALLBACK } from './config/env.js';
+import { applyRagSelection } from './utils/rag-bridge.js';
 
 type Mode = 'values' | 'events';
 
@@ -107,6 +108,15 @@ async function main() {
     console.error('  或设置环境变量: DEFAULT_QUERY="你的问题"');
     process.exit(1);
   }
+  
+  // 自动加载界面配置的默认 RAG 设置
+  try {
+    applyRagSelection(true); // 启用 RAG，使用默认配置
+    logger.info('已加载界面 RAG 配置');
+  } catch (error) {
+    logger.warn('加载界面 RAG 配置失败，将使用环境变量配置', error);
+  }
+  
   const runtime = await createAgentRuntime();
   const threadId = (cliThreadId && cliThreadId.trim()) || (THREAD_ID_FALLBACK && THREAD_ID_FALLBACK.trim()) || undefined;
 

@@ -37,18 +37,20 @@ export async function getDefaultTools(): Promise<AnyTool[]> {
   const tools: AnyTool[] = [];
   const loadErrors: Array<{ tool: string; error: string; strategy: ToolLoadStrategy }> = [];
 
-  // 1. 内部知识库检索（可选：仅当 RAG 可用时注册）
-  if (RAG_ENABLED) {
-    try {
-      tools.push(kbSearchTool);
-      logger.info('Loaded kb_search tool (RAG enabled)');
-    } catch (error) {
-      const errorMsg = `kb_search: ${error}`;
-      loadErrors.push({ tool: 'kb_search', error: errorMsg, strategy: ToolLoadStrategy.OPTIONAL });
-      logger.warn(`[Optional Tool] ${errorMsg}`);
+  // 1. 内部知识库检索（始终注册，执行时动态检查配置）
+  // 设计思路：工具声明与执行分离，让 LLM 始终知道有 RAG 能力
+  // 配置不完整时会在执行时返回友好提示，引导用户配置
+  try {
+    tools.push(kbSearchTool);
+    if (RAG_ENABLED) {
+      logger.info('Loaded kb_search tool (RAG pre-configured at startup)');
+    } else {
+      logger.info('Loaded kb_search tool (RAG not configured, will check at execution time)');
     }
-  } else {
-    logger.info('RAG not configured; skip registering kb_search tool');
+  } catch (error) {
+    const errorMsg = `kb_search: ${error}`;
+    loadErrors.push({ tool: 'kb_search', error: errorMsg, strategy: ToolLoadStrategy.OPTIONAL });
+    logger.warn(`[Optional Tool] ${errorMsg}`);
   }
 
   // 汇总加载结果

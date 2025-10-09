@@ -85,7 +85,10 @@ export function applyRagSelection(
   ragConfigId?: string,
   ragCollection?: string
 ): void {
+  console.log('[rag-bridge] applyRagSelection 调用', { ragEnabled, ragConfigId, ragCollection })
+  
   if (!ragEnabled) {
+    console.log('[rag-bridge] RAG 未启用，恢复原始环境变量')
     // 恢复原始环境变量
     Object.entries(originalEnv).forEach(([k, v]) => {
       if (typeof v === 'string') process.env[k] = v
@@ -95,7 +98,21 @@ export function applyRagSelection(
   }
 
   const cfg = findRagConfig(ragConfigId)
-  if (!cfg) return
+  if (!cfg) {
+    console.warn('[rag-bridge] 找不到可用的 RAG 配置', { 
+      ragConfigId, 
+      settingsPath: getSettingsPath(),
+      availableConfigs: readVectorDbConfigs().map(c => ({ id: c.id, name: c.name, enabled: c.enabled }))
+    })
+    return
+  }
+
+  console.log('[rag-bridge] 找到 RAG 配置，应用环境变量', { 
+    id: cfg.id, 
+    name: cfg.name,
+    chromaUrl: cfg.connection?.url,
+    collection: ragCollection || cfg.defaultCollection
+  })
 
   process.env.CHROMA_URL = cfg.connection?.url || ''
   process.env.KB_STORAGE_ROOT = cfg.storage?.rootDir || ''
@@ -111,6 +128,13 @@ export function applyRagSelection(
   }
   const coll = (ragCollection || cfg.defaultCollection || '').trim()
   if (coll) process.env.KB_COLLECTION = coll
+  
+  console.log('[rag-bridge] 环境变量已设置', {
+    CHROMA_URL: process.env.CHROMA_URL ? '已设置' : '未设置',
+    KB_COLLECTION: process.env.KB_COLLECTION || '未设置',
+    KB_EMBED_PROVIDER: process.env.KB_EMBED_PROVIDER,
+    KB_EMBED_MODEL: process.env.KB_EMBED_MODEL
+  })
 }
 
 

@@ -301,15 +301,17 @@ export interface PreloadApi {
       cfgId: string,
       filePath: string,
       collection: string,
-      split?: { chunkSize?: number; chunkOverlap?: number }
-    ) => Promise<void>
+      split?: { chunkSize?: number; chunkOverlap?: number },
+      options?: { forceMethod?: 'auto' | 'ast' | 'text' }
+    ) => Promise<{ method: string; chunks: number }>
     /** 导入目录到指定 collection */
     ragImportDir: (
       cfgId: string,
       dirPath: string,
       collection: string,
-      split?: { chunkSize?: number; chunkOverlap?: number }
-    ) => Promise<void>
+      split?: { chunkSize?: number; chunkOverlap?: number },
+      options?: { forceMethod?: 'auto' | 'ast' | 'text' }
+    ) => Promise<{ total: number; processed: number; codeFiles: number; docFiles: number }>
   }
 }
 

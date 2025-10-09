@@ -9,6 +9,8 @@
 
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
+import { ingestSourceWithFallback } from './sourceIngestor.js'
+import { logger } from '../utils/logger.js'
 
 /**
  * 嵌入模型基础配置（精简版）。
@@ -274,65 +276,239 @@ async function withRagEnv<T>(cfg: VectorDbConfigLite, fn: () => Promise<T>): Pro
 }
 
 /**
- * 基于配置入库单个文件。
+ * 基于配置入库单个文件（智能识别代码/文档并选择处理方式）。
+ * 
+ * @param {VectorDbConfigLite} cfg - RAG 配置
+ * @param {string} filePath - 文件路径
+ * @param {string} collection - 集合名称
+ * @param {object} split - 切块参数
+ * @param {object} options - 扩展选项
+ * @returns {Promise<{ method: string; chunks: number }>}
  */
 export async function ingestFileWithConfig(
   cfg: VectorDbConfigLite,
   filePath: string,
   collection: string,
-  split?: { chunkSize?: number; chunkOverlap?: number }
-): Promise<void> {
+  split?: { chunkSize?: number; chunkOverlap?: number },
+  options?: { forceMethod?: 'auto' | 'ast' | 'text' }
+): Promise<{ method: string; chunks: number }> {
+  const result = { method: 'text', chunks: 0 }
+  
   await withRagEnv(cfg, async () => {
     const { ingestFile } = await import('./storage.js')
     const stat = await fs.stat(filePath)
     if (!stat.isFile()) throw new Error('选择的路径不是文件')
-    const buffer = await fs.readFile(filePath)
+    
+    const strategy = getFileStrategy(filePath)
+    if (strategy.skip) {
+      throw new Error(`不支持的文件类型: ${path.extname(filePath)}`)
+    }
+    
     const filename = path.basename(filePath)
-    await ingestFile({
+    const forceMethod = options?.forceMethod || 'auto'
+    
+    // 决定使用哪种处理方式
+    const shouldUseAst = 
+      forceMethod === 'ast' || 
+      (forceMethod === 'auto' && strategy.useAst)
+    
+    if (shouldUseAst && strategy.type === 'code') {
+      // 代码文件：尝试 AST 解析
+      try {
+        const docsCount = await ingestSourceWithFallback({
+          filePath,
+          collection
+        })
+        
+        if (docsCount > 0) {
+          result.method = 'AST-Fast'
+          result.chunks = docsCount
+          logger.info(`[ingestFile] AST 解析成功: ${filename} (${docsCount} 个符号)`)
+          return
+        }
+      } catch (astError) {
+        logger.warn(`[ingestFile] AST 解析失败，回退到文本切块: ${filename}`, {
+          error: (astError as Error).message
+        })
+      }
+    }
+    
+    // 文档文件或 AST 失败的回退：使用传统文本切块
+    const buffer = await fs.readFile(filePath)
+    const res = await ingestFile({
       collectionName: collection,
       filename,
       buffer,
       split: split ? { chunkSize: split.chunkSize, chunkOverlap: split.chunkOverlap } : undefined
     })
+    
+    result.method = '文本切块'
+    result.chunks = res.chunks
+    logger.info(`[ingestFile] 文档处理成功: ${filename} (${res.chunks} 个切块)`)
   })
+  
+  return result
 }
 
 /**
- * 基于配置入库目录（递归扫描支持的文档）。
+ * 文件类型分类，用于智能处理策略选择。
+ */
+const FILE_CATEGORIES = {
+  // AST-Fast 支持的代码文件
+  CODE: new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.rs', '.go', '.sol', '.java']),
+  // 文档文件
+  DOCS: new Set(['.md', '.txt', '.pdf', '.docx']),
+  // 配置文件（通常不切块）
+  CONFIG: new Set(['.json', '.yaml', '.yml', '.toml', '.ini', '.env', '.xml'])
+}
+
+/**
+ * 获取文件的处理策略。
+ * 
+ * @param {string} filePath - 文件路径
+ * @returns {{ type: string, useAst: boolean, skip: boolean }}
+ */
+function getFileStrategy(filePath: string): { type: string; useAst: boolean; skip: boolean } {
+  const ext = path.extname(filePath).toLowerCase()
+  
+  if (FILE_CATEGORIES.CODE.has(ext)) {
+    return { type: 'code', useAst: true, skip: false }
+  } else if (FILE_CATEGORIES.DOCS.has(ext)) {
+    return { type: 'document', useAst: false, skip: false }
+  } else if (FILE_CATEGORIES.CONFIG.has(ext)) {
+    // 配置文件暂时也作为文档处理，后续可优化为整文件入库
+    return { type: 'config', useAst: false, skip: false }
+  }
+  
+  // 不支持的文件类型
+  return { type: 'unknown', useAst: false, skip: true }
+}
+
+/**
+ * 基于配置入库目录（智能识别代码/文档并选择处理方式）。
+ * 
+ * @param {VectorDbConfigLite} cfg - RAG 配置
+ * @param {string} dirPath - 目录路径
+ * @param {string} collection - 集合名称
+ * @param {object} split - 切块参数
+ * @param {object} options - 扩展选项
+ * @returns {Promise<{ total: number; processed: number; codeFiles: number; docFiles: number }>}
  */
 export async function ingestDirWithConfig(
   cfg: VectorDbConfigLite,
   dirPath: string,
   collection: string,
-  split?: { chunkSize?: number; chunkOverlap?: number }
-): Promise<void> {
+  split?: { chunkSize?: number; chunkOverlap?: number },
+  options?: { 
+    forceMethod?: 'auto' | 'ast' | 'text',  // 强制处理方式
+    onProgress?: (info: { file: string; type: string; method: string }) => void  // 进度回调
+  }
+): Promise<{ total: number; processed: number; codeFiles: number; docFiles: number }> {
+  const result = { total: 0, processed: 0, codeFiles: 0, docFiles: 0 }
+  
   await withRagEnv(cfg, async () => {
     const { ingestFile } = await import('./storage.js')
     const stat = await fs.stat(dirPath)
     if (!stat.isDirectory()) throw new Error('选择的路径不是目录')
-    const supported = new Set(['.md', '.txt', '.pdf', '.docx'])
+    
+    // 扫描所有文件
     async function walk(start: string): Promise<string[]> {
       const out: string[] = []
       const entries = await fs.readdir(start, { withFileTypes: true })
       for (const entry of entries) {
         const full = path.join(start, entry.name)
-        if (entry.isDirectory()) out.push(...(await walk(full)))
-        else if (supported.has(path.extname(entry.name).toLowerCase())) out.push(full)
+        if (entry.isDirectory()) {
+          // 跳过 node_modules 等常见的排除目录
+          if (!['node_modules', '.git', 'dist', 'build', '.next'].includes(entry.name)) {
+            out.push(...(await walk(full)))
+          }
+        } else {
+          out.push(full)
+        }
       }
       return out
     }
+    
     const files = await walk(dirPath)
-    for (const f of files) {
-      const buffer = await fs.readFile(f)
-      const filename = path.basename(f)
-      await ingestFile({
-        collectionName: collection,
-        filename,
-        buffer,
-        split: split ? { chunkSize: split.chunkSize, chunkOverlap: split.chunkOverlap } : undefined
-      })
+    result.total = files.length
+    
+    for (const filePath of files) {
+      const strategy = getFileStrategy(filePath)
+      
+      if (strategy.skip) {
+        logger.debug(`[ingestDir] 跳过不支持的文件: ${filePath}`)
+        continue
+      }
+      
+      const filename = path.basename(filePath)
+      const forceMethod = options?.forceMethod || 'auto'
+      
+      try {
+        // 决定使用哪种处理方式
+        const shouldUseAst = 
+          forceMethod === 'ast' || 
+          (forceMethod === 'auto' && strategy.useAst)
+        
+        if (shouldUseAst && strategy.type === 'code') {
+          // 代码文件：尝试 AST 解析
+          options?.onProgress?.({
+            file: filename,
+            type: strategy.type,
+            method: 'AST-Fast'
+          })
+          
+          try {
+            const docsCount = await ingestSourceWithFallback({
+              filePath,
+              collection
+            })
+            
+            if (docsCount > 0) {
+              result.codeFiles++
+              result.processed++
+              logger.info(`[ingestDir] AST 解析成功: ${filename} (${docsCount} 个符号)`)
+              continue
+            }
+          } catch (astError) {
+            logger.warn(`[ingestDir] AST 解析失败，回退到文本切块: ${filename}`, {
+              error: (astError as Error).message
+            })
+          }
+        }
+        
+        // 文档文件或 AST 失败的回退：使用传统文本切块
+        options?.onProgress?.({
+          file: filename,
+          type: strategy.type,
+          method: '文本切块'
+        })
+        
+        const buffer = await fs.readFile(filePath)
+        await ingestFile({
+          collectionName: collection,
+          filename,
+          buffer,
+          split: split ? { chunkSize: split.chunkSize, chunkOverlap: split.chunkOverlap } : undefined
+        })
+        
+        if (strategy.type === 'code') {
+          result.codeFiles++
+        } else {
+          result.docFiles++
+        }
+        result.processed++
+        
+        logger.info(`[ingestDir] 文档处理成功: ${filename}`)
+        
+      } catch (error) {
+        logger.error(`[ingestDir] 文件处理失败: ${filename}`, {
+          error: (error as Error).message
+        })
+      }
     }
   })
+  
+  return result
 }
 
 

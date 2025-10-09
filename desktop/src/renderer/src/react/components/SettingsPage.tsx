@@ -28,7 +28,8 @@ export const SettingsPage: React.FC = () => {
   const [importMode, setImportMode] = useState<'file' | 'dir'>('file')
   const [importTarget, setImportTarget] = useState<VectorDbConfig | null>(null)
   const [importPath, setImportPath] = useState<string>('')
-  const [importForm] = Form.useForm<{ collection: string; chunkSize?: number; chunkOverlap?: number }>()
+  const [importForm] = Form.useForm<{ collection: string; chunkSize?: number; chunkOverlap?: number; parseMethod?: 'auto' | 'ast' | 'text' }>()
+  const [importLoading, setImportLoading] = useState(false)
 
   const load = async (): Promise<void> => {
     setLoading(true)
@@ -369,7 +370,9 @@ export const SettingsPage: React.FC = () => {
     try {
       const picked = await window.api.util.pickFile({
         filters: [
-          { name: 'Documents', extensions: ['md', 'txt', 'pdf', 'docx'] }
+          { name: 'All Files', extensions: ['*'] },
+          { name: 'Documents', extensions: ['md', 'txt', 'pdf', 'docx'] },
+          { name: 'Code Files', extensions: ['ts', 'tsx', 'js', 'jsx', 'py', 'rs', 'go', 'java', 'sol'] }
         ]
       })
       if (!picked) return
@@ -379,7 +382,8 @@ export const SettingsPage: React.FC = () => {
       importForm.setFieldsValue({
         collection: cfg.defaultCollection || '',
         chunkSize: 1000,
-        chunkOverlap: 150
+        chunkOverlap: 150,
+        parseMethod: 'auto'
       })
       setImportModalOpen(true)
     } catch (e) {
@@ -397,7 +401,8 @@ export const SettingsPage: React.FC = () => {
       importForm.setFieldsValue({
         collection: cfg.defaultCollection || '',
         chunkSize: 1000,
-        chunkOverlap: 150
+        chunkOverlap: 150,
+        parseMethod: 'auto'
       })
       setImportModalOpen(true)
     } catch (e) {
@@ -407,25 +412,66 @@ export const SettingsPage: React.FC = () => {
 
   const handleImportOk = async (): Promise<void> => {
     try {
+      setImportLoading(true)
       const values = await importForm.validateFields()
       const cfg = importTarget
       if (!cfg) return
+      
+      const splitOptions = {
+        chunkSize: values.chunkSize,
+        chunkOverlap: values.chunkOverlap
+      }
+      
+      const parseOptions = {
+        forceMethod: values.parseMethod || 'auto' as 'auto' | 'ast' | 'text'
+      }
+      
       if (importMode === 'file') {
-        await window.api.settings.ragImportFile(cfg.id, importPath, values.collection.trim(), {
-          chunkSize: values.chunkSize,
-          chunkOverlap: values.chunkOverlap
+        const result = await window.api.settings.ragImportFile(
+          cfg.id, 
+          importPath, 
+          values.collection.trim(), 
+          splitOptions,
+          parseOptions
+        )
+        
+        Modal.success({
+          title: '✅ 文件导入成功',
+          content: (
+            <div>
+              <p>解析方式：{result.method}</p>
+              <p>切块数量：{result.chunks}</p>
+            </div>
+          )
         })
       } else {
-        await window.api.settings.ragImportDir(cfg.id, importPath, values.collection.trim(), {
-          chunkSize: values.chunkSize,
-          chunkOverlap: values.chunkOverlap
+        const result = await window.api.settings.ragImportDir(
+          cfg.id, 
+          importPath, 
+          values.collection.trim(), 
+          splitOptions,
+          parseOptions
+        )
+        
+        Modal.success({
+          title: '✅ 目录导入成功',
+          content: (
+            <div>
+              <p>总文件数：{result.total}</p>
+              <p>成功处理：{result.processed}</p>
+              <p>代码文件：{result.codeFiles}</p>
+              <p>文档文件：{result.docFiles}</p>
+            </div>
+          )
         })
       }
-      message.success('已提交导入任务')
+      
       setImportModalOpen(false)
     } catch (e) {
       // 表单校验或调用失败
       if (e instanceof Error) message.error(e.message)
+    } finally {
+      setImportLoading(false)
     }
   }
 
@@ -624,6 +670,7 @@ export const SettingsPage: React.FC = () => {
         onCancel={() => setImportModalOpen(false)}
         onOk={handleImportOk}
         okText="开始导入"
+        confirmLoading={importLoading}
       >
         <Space direction="vertical" style={{ width: '100%' }}>
           <Descriptions size="small" column={1}>
@@ -634,11 +681,59 @@ export const SettingsPage: React.FC = () => {
             <Form.Item name="collection" label="集合名称" rules={[{ required: true, message: '请输入集合名称' }]}>
               <Input placeholder="如：mindforge_kb（建议与入库一致）" />
             </Form.Item>
-            <Form.Item name="chunkSize" label="切块大小" initialValue={1000}>
-              <InputNumber min={200} max={4000} step={100} style={{ width: '100%' }} />
+            
+            <Divider orientation="left">解析选项</Divider>
+            
+            <Form.Item 
+              name="parseMethod" 
+              label="解析方式" 
+              initialValue="auto"
+              tooltip="自动模式：代码文件使用AST解析（符号级切块），文档文件使用文本切块"
+            >
+              <Select
+                options={[
+                  { 
+                    label: '🤖 智能识别（推荐）', 
+                    value: 'auto',
+                  },
+                  { 
+                    label: '🔧 AST 解析（仅代码）', 
+                    value: 'ast',
+                  },
+                  { 
+                    label: '📝 文本切块（通用）', 
+                    value: 'text',
+                  }
+                ]}
+                placeholder="选择解析方式"
+              />
             </Form.Item>
-            <Form.Item name="chunkOverlap" label="切块重叠" initialValue={150}>
-              <InputNumber min={0} max={1000} step={50} style={{ width: '100%' }} />
+            
+            <Form.Item 
+              noStyle 
+              shouldUpdate={(prevValues, currentValues) => 
+                prevValues.parseMethod !== currentValues.parseMethod
+              }
+            >
+              {({ getFieldValue }) => {
+                const method = getFieldValue('parseMethod') || 'auto'
+                const showChunkSettings = method === 'text' || method === 'auto'
+                
+                return showChunkSettings ? (
+                  <>
+                    <Form.Item name="chunkSize" label="切块大小" initialValue={1000} tooltip="仅对文本切块生效">
+                      <InputNumber min={200} max={4000} step={100} style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item name="chunkOverlap" label="切块重叠" initialValue={150} tooltip="仅对文本切块生效">
+                      <InputNumber min={0} max={1000} step={50} style={{ width: '100%' }} />
+                    </Form.Item>
+                  </>
+                ) : (
+                  <div style={{ padding: '8px 0', color: '#666', fontSize: '12px' }}>
+                    💡 AST 模式将自动按代码符号（函数、类等）切块，无需设置切块参数
+                  </div>
+                )
+              }}
             </Form.Item>
           </Form>
         </Space>

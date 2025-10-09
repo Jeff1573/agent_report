@@ -57,8 +57,8 @@ const api: PreloadApi = {
     ragSetDefault: (id) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_RAG_SET_DEFAULT, id),
     ragToggleEnabled: (id, enabled) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_RAG_TOGGLE_ENABLED, id, enabled),
     ragValidate: (cfg) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_RAG_VALIDATE, cfg),
-    ragImportFile: (cfgId, filePath, collection, split) => ipcRenderer.invoke(IPC_CHANNELS.RAG_IMPORT_FILE, cfgId, filePath, collection, split),
-    ragImportDir: (cfgId, dirPath, collection, split) => ipcRenderer.invoke(IPC_CHANNELS.RAG_IMPORT_DIR, cfgId, dirPath, collection, split)
+    ragImportFile: (cfgId, filePath, collection, split, options) => ipcRenderer.invoke(IPC_CHANNELS.RAG_IMPORT_FILE, cfgId, filePath, collection, split, options),
+    ragImportDir: (cfgId, dirPath, collection, split, options) => ipcRenderer.invoke(IPC_CHANNELS.RAG_IMPORT_DIR, cfgId, dirPath, collection, split, options)
   }
 }
 
