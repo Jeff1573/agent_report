@@ -13,14 +13,15 @@ export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
     resolve: {
-      alias: {
-        'agent': resolve('../agent')
-      },
       extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json']
     },
     build: {
       rollupOptions: {
         external: (id: string) => {
+          // agent 作为正式本地包运行，主进程保留 package exports 解析路径
+          if (id === 'agent' || id.startsWith('agent/')) {
+            return true
+          }
           // agent 的 dependencies 自动被 externalize
           if (agentDeps.some((pkg) => id === pkg || id.startsWith(pkg + '/'))) {
             return true

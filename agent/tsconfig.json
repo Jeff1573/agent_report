@@ -6,7 +6,10 @@
     "lib": ["ES2022"],
     "types": ["node"],
     "rootDir": ".",
-    "noEmit": true,
+    "outDir": "dist",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
     "strict": true,
     // 禁用 TypeScript 的未使用变量检查，交由 ESLint 处理（警告级别）
     "noUnusedLocals": false,
@@ -14,7 +17,16 @@
     "skipLibCheck": true,
     "resolveJsonModule": true
   },
-  "include": ["**/*.ts"],
-  "exclude": ["node_modules", "dist", "build"]
+  "include": [
+    "index.ts",
+    "config/**/*.ts",
+    "llm/**/*.ts",
+    "runtime/**/*.ts",
+    "services/**/*.ts",
+    "stream/**/*.ts",
+    "tools/**/*.ts",
+    "utils/**/*.ts"
+  ],
+  "exclude": ["node_modules", "dist", "build", "examples", "tests", "scripts"]
 }
 

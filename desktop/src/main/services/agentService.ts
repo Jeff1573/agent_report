@@ -92,15 +92,13 @@ async function getRuntime(): Promise<AgentRuntime> {
     }
     
     // 动态导入 agent 模块
-    // 在 workspace 环境下，agent 作为独立的 workspace 存在于项目根目录
-    // 开发环境：直接导入 agent workspace 的编译后文件
-    // 生产环境：需要在打包配置中确保 agent 模块被正确包含
+    // 开发与生产都通过 agent/package.json 的 exports 解析到 dist 产物
+    // desktop 构建前会先构建 agent，确保 Electron 打包后仍能解析该模块
     
     let createAgentRuntime: ((config?: RuntimeConfig) => Promise<AgentRuntime>) | undefined
     
     try {
-      // 使用别名导入（在 electron.vite.config.ts 中配置）
-      // Vite 会自动解析 .ts 扩展名
+      // 使用 agent 的 package exports 导入，避免运行时依赖 TypeScript 源码路径
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore - Agent 模块在独立的 workspace，TypeScript 无法静态解析，但运行时动态导入可用
       const module = await import('agent/runtime/index')

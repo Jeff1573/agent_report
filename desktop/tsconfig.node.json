@@ -23,9 +23,6 @@
     "noUnusedParameters": false,
     "types": ["electron-vite/node"],
     "skipLibCheck": true,
-    "moduleResolution": "bundler",
-    "paths": {
-      "agent/*": ["../agent/*"]
-    }
+    "moduleResolution": "bundler"
   }
 }
