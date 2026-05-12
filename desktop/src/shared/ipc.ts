@@ -26,6 +26,7 @@ export const IPC_CHANNELS = {
   SETTINGS_MODEL_UPSERT: 'settings/model/upsert',
   SETTINGS_MODEL_DELETE: 'settings/model/delete',
   SETTINGS_MODEL_VALIDATE_STREAMING: 'settings/model/validateStreaming',
+  SETTINGS_MODEL_VALIDATE_CONNECTION: 'settings/model/validateConnection',
   SETTINGS_EXPORT: 'settings/export',
   SETTINGS_IMPORT: 'settings/import',
   SETTINGS_OPEN_APP_DATA_FILE: 'settings/openAppDataFile',
@@ -124,6 +125,26 @@ export interface StreamingValidationResult {
   tokenCount?: number
   /** 首个 token 延迟（毫秒） */
   firstTokenLatency?: number
+  /** 验证时间戳 */
+  timestamp: number
+}
+
+/** 模型连接验证结果 */
+export interface ModelConnectionValidationResult {
+  /** 当前配置是否可连接并成功调用 */
+  ok: boolean
+  /** 验证耗时（毫秒） */
+  duration: number
+  /** HTTP 状态码 */
+  httpStatus?: number
+  /** API Key 来源 */
+  apiKeySource: 'ui' | 'env' | 'missing'
+  /** 实际用于验证的 Base URL */
+  baseURL: string
+  /** 面向用户的状态信息 */
+  message: string
+  /** 错误详情 */
+  error?: string
   /** 验证时间戳 */
   timestamp: number
 }
@@ -274,6 +295,8 @@ export interface PreloadApi {
     deleteModel: (id: string) => Promise<void>
     /** 验证模型的流式支持 */
     validateStreaming: (modelId: string) => Promise<StreamingValidationResult>
+    /** 验证当前模型配置是否可连接 */
+    validateModelConnection: (config: ModelConfig) => Promise<ModelConnectionValidationResult>
     /** 导出设置为 JSON 字符串 */
     exportSettings: () => Promise<string>
     /** 导入设置（JSON 字符串） */

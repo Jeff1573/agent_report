@@ -46,6 +46,7 @@ const api: PreloadApi = {
     upsertModel: (config) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_MODEL_UPSERT, config),
     deleteModel: (id) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_MODEL_DELETE, id),
     validateStreaming: (modelId) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_MODEL_VALIDATE_STREAMING, modelId),
+    validateModelConnection: (config) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_MODEL_VALIDATE_CONNECTION, config),
     exportSettings: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_EXPORT),
     importSettings: (json) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_IMPORT, json),
     openAppDataFile: (filename) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_OPEN_APP_DATA_FILE, filename),

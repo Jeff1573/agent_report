@@ -1,10 +1,16 @@
 import React, { useEffect, useState } from 'react'
-import { Button, Card, Descriptions, Divider, Form, Input, InputNumber, List, Modal, Space, Typography, message, Upload, Tag, Tooltip, Switch, Tabs, Select } from 'antd'
+import { Alert, Button, Card, Descriptions, Divider, Form, Input, InputNumber, List, Modal, Space, Typography, message, Upload, Tag, Tooltip, Switch, Tabs, Select } from 'antd'
 import { LeftOutlined, PlusOutlined, EditOutlined, DeleteOutlined, CheckOutlined, UploadOutlined, DownloadOutlined, SettingOutlined, CheckCircleOutlined, CloseCircleOutlined, FolderOpenOutlined, FileAddOutlined } from '@ant-design/icons'
-import type { ModelConfig, VectorDbConfig, RagValidationResult } from '../../../../shared/ipc'
+import type { ModelConfig, VectorDbConfig, RagValidationResult, ModelConnectionValidationResult } from '../../../../shared/ipc'
 import { useNavigate } from 'react-router-dom'
 
 const { Text } = Typography
+
+const formatApiKeySource = (source: ModelConnectionValidationResult['apiKeySource']): string => {
+  if (source === 'ui') return '当前表单'
+  if (source === 'env') return '环境变量'
+  return '未配置'
+}
 
 export const SettingsPage: React.FC = () => {
   const navigate = useNavigate()
@@ -14,6 +20,8 @@ export const SettingsPage: React.FC = () => {
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<ModelConfig | null>(null)
   const [validating, setValidating] = useState(false)
+  const [connectionValidating, setConnectionValidating] = useState(false)
+  const [connectionResult, setConnectionResult] = useState<ModelConnectionValidationResult | null>(null)
   const [form] = Form.useForm<ModelConfig>()
 
   // RAG 配置状态
@@ -65,12 +73,16 @@ export const SettingsPage: React.FC = () => {
 
   const onAdd = (): void => {
     setEditing(null)
+    setConnectionResult(null)
+    setConnectionValidating(false)
     form.resetFields()
     setModalOpen(true)
   }
 
   const onEdit = (cfg: ModelConfig): void => {
     setEditing(cfg)
+    setConnectionResult(null)
+    setConnectionValidating(false)
     form.setFieldsValue(cfg)
     setModalOpen(true)
   }
@@ -104,24 +116,29 @@ export const SettingsPage: React.FC = () => {
     }
   }
 
+  const buildModelPayload = (
+    values: ModelConfig,
+    options: { streaming?: boolean } = {}
+  ): ModelConfig => ({
+    id: editing?.id || '',
+    name: (values.name || '').trim(),
+    model: (values.model || '').trim(),
+    baseURL: (values.baseURL || '').trim() || undefined,
+    apiKey: (values.apiKey || '').trim() || undefined,
+    temperature: typeof values.temperature === 'number' ? values.temperature : 0,
+    timeout: typeof values.timeout === 'number' ? values.timeout : 60000,
+    maxRetries: typeof values.maxRetries === 'number' ? values.maxRetries : 2,
+    streaming: typeof options.streaming === 'boolean' ? options.streaming : Boolean(values.streaming),
+    updatedAt: Date.now()
+  })
+
   const onSubmit = async (): Promise<void> => {
     try {
       const values = await form.validateFields()
-      // 规范：空 baseURL 不写，走默认；Bearer 仅支持 apiKey
-      const payload: ModelConfig = {
-        id: editing?.id || '',
-        name: values.name.trim(),
-        model: values.model.trim(),
-        baseURL: (values.baseURL || '').trim() || undefined,
-        apiKey: (values.apiKey || '').trim() || undefined,
-        temperature: typeof values.temperature === 'number' ? values.temperature : 0,
-        timeout: typeof values.timeout === 'number' ? values.timeout : 60000,
-        maxRetries: typeof values.maxRetries === 'number' ? values.maxRetries : 2,
-        streaming: Boolean(values.streaming),
-        updatedAt: Date.now()
-      }
+      const payload = buildModelPayload(values)
       await window.api.settings.upsertModel(payload)
       setModalOpen(false)
+      setConnectionResult(null)
       message.success(editing ? '已更新' : '已新增')
       load()
     } catch (e) {
@@ -188,18 +205,7 @@ export const SettingsPage: React.FC = () => {
       message.loading({ content: '正在验证流式支持...', key: 'validating', duration: 0 })
 
       // 构建临时配置进行验证
-      const tempConfig: ModelConfig = {
-        id: editing?.id || '',
-        name: values.name.trim(),
-        model: values.model.trim(),
-        baseURL: (values.baseURL || '').trim() || undefined,
-        apiKey: (values.apiKey || '').trim() || undefined,
-        temperature: typeof values.temperature === 'number' ? values.temperature : 0,
-        timeout: typeof values.timeout === 'number' ? values.timeout : 60000,
-        maxRetries: typeof values.maxRetries === 'number' ? values.maxRetries : 2,
-        streaming: true,
-        updatedAt: Date.now()
-      }
+      const tempConfig = buildModelPayload(values, { streaming: true })
 
       // 临时保存配置以便验证
       await window.api.settings.upsertModel(tempConfig)
@@ -244,6 +250,26 @@ export const SettingsPage: React.FC = () => {
       form.setFieldValue('streaming', false)
     } finally {
       setValidating(false)
+    }
+  }
+
+  const onValidateConnection = async (): Promise<void> => {
+    try {
+      const values = await form.validateFields()
+      const payload = buildModelPayload(values)
+      setConnectionResult(null)
+      setConnectionValidating(true)
+      const result = await window.api.settings.validateModelConnection(payload)
+      setConnectionResult(result)
+      if (result.ok) {
+        message.success(result.message)
+      } else {
+        message.error(result.message)
+      }
+    } catch (e) {
+      if (e instanceof Error) message.error(e.message)
+    } finally {
+      setConnectionValidating(false)
     }
   }
 
@@ -620,11 +646,19 @@ export const SettingsPage: React.FC = () => {
       <Modal
         title={editing ? '编辑模型配置' : '新增模型配置'}
         open={modalOpen}
-        onCancel={() => setModalOpen(false)}
+        onCancel={() => {
+          setModalOpen(false)
+          setConnectionResult(null)
+        }}
         onOk={onSubmit}
         okText={editing ? '保存' : '创建'}
       >
-        <Form form={form} layout="vertical" initialValues={{ temperature: 0, timeout: 60000, maxRetries: 2, streaming: false }}>
+        <Form
+          form={form}
+          layout="vertical"
+          initialValues={{ temperature: 0, timeout: 60000, maxRetries: 2, streaming: false }}
+          onValuesChange={() => setConnectionResult(null)}
+        >
           <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
             <Input placeholder="如：默认OpenAI 或 公司网关" />
           </Form.Item>
@@ -636,6 +670,36 @@ export const SettingsPage: React.FC = () => {
           </Form.Item>
           <Form.Item name="apiKey" label="API Key（Bearer）" tooltip="不保存可留空，每次调用走环境变量">
             <Input.Password placeholder="优先使用此 Key，留空走 .env" autoComplete="off" />
+          </Form.Item>
+          <Form.Item>
+            <Space direction="vertical" style={{ width: '100%' }}>
+              <Button
+                icon={<CheckCircleOutlined />}
+                loading={connectionValidating}
+                onClick={onValidateConnection}
+              >
+                验证连接
+              </Button>
+              {connectionResult && (
+                <Alert
+                  showIcon
+                  type={connectionResult.ok ? 'success' : 'error'}
+                  message={connectionResult.ok ? '连接成功' : '连接失败'}
+                  description={
+                    <Space direction="vertical" size={0}>
+                      <Text>{connectionResult.message}</Text>
+                      <Text type="secondary">Base URL：{connectionResult.baseURL}</Text>
+                      <Text type="secondary">
+                        HTTP：{connectionResult.httpStatus ?? '-'} · 耗时：{connectionResult.duration}ms · Key 来源：{formatApiKeySource(connectionResult.apiKeySource)}
+                      </Text>
+                      {connectionResult.error && (
+                        <Text type="secondary">详情：{connectionResult.error}</Text>
+                      )}
+                    </Space>
+                  }
+                />
+              )}
+            </Space>
           </Form.Item>
           <Form.Item name="temperature" label="温度">
             <InputNumber min={0} max={2} step={0.1} style={{ width: '100%' }} />

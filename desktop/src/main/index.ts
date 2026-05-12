@@ -310,6 +310,9 @@ app.whenReady().then(() => {
   ipcMain.handle(IPC_CHANNELS.SETTINGS_MODEL_VALIDATE_STREAMING, async (_event, modelId: string) => {
     return settingsService.validateModelStreaming(modelId)
   })
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_MODEL_VALIDATE_CONNECTION, async (_event, config) => {
+    return settingsService.validateModelConnection(config)
+  })
   ipcMain.handle(IPC_CHANNELS.SETTINGS_EXPORT, async () => {
     return settingsService.exportSettings()
   })

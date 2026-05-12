@@ -1,10 +1,11 @@
 import { app, shell } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
-import type { AppSettings, ModelConfig, StreamingValidationResult, VectorDbConfig, RagValidationResult, RetrieverConfig } from '../../shared/ipc'
+import type { AppSettings, ModelConfig, StreamingValidationResult, VectorDbConfig, RagValidationResult, RetrieverConfig, ModelConnectionValidationResult } from '../../shared/ipc'
 
 const SETTINGS_FILE = 'settings.json'
 const MCP_CONFIG_FILE = 'mcp.json'
+const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1'
 
 function getSettingsPath(): string {
   const userData = app.getPath('userData')
@@ -135,6 +136,147 @@ export async function importSettings(json: string): Promise<void> {
     saveSettings(obj)
   } catch (e) {
     throw new Error(`导入失败: ${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
+function buildConnectionFailureResult(
+  startTime: number,
+  baseURL: string,
+  apiKeySource: ModelConnectionValidationResult['apiKeySource'],
+  message: string,
+  options: {
+    httpStatus?: number
+    error?: string
+  } = {}
+): ModelConnectionValidationResult {
+  return {
+    ok: false,
+    duration: Date.now() - startTime,
+    httpStatus: options.httpStatus,
+    apiKeySource,
+    baseURL,
+    message,
+    error: options.error,
+    timestamp: Date.now()
+  }
+}
+
+function getHttpFailureMessage(status: number, detail?: string): string {
+  if (status === 401 || status === 403) return '鉴权失败，请检查 API Key 或服务权限'
+  if (status === 404) return '接口或模型不存在，请检查 Base URL 和模型名'
+  if (status === 429) return '请求频率或额度受限，请稍后重试'
+  if (status >= 500) return '服务端返回异常，请稍后重试或检查兼容端点状态'
+  return detail || `请求失败（HTTP ${status}）`
+}
+
+function extractApiErrorMessage(text: string): string | undefined {
+  if (!text.trim()) return undefined
+  try {
+    const parsed = JSON.parse(text) as { error?: { message?: string }; message?: string }
+    return parsed.error?.message || parsed.message || undefined
+  } catch {
+    return text.slice(0, 500)
+  }
+}
+
+export async function validateModelConnection(
+  cfg: ModelConfig
+): Promise<ModelConnectionValidationResult> {
+  const startTime = Date.now()
+  const rawBaseURL = (cfg.baseURL || '').trim() || DEFAULT_OPENAI_BASE_URL
+  const baseURL = rawBaseURL.replace(/\/+$/, '')
+  const model = (cfg.model || '').trim()
+  const uiApiKey = (cfg.apiKey || '').trim()
+  const envApiKey = (process.env.OPENAI_API_KEY || '').trim()
+  const apiKey = uiApiKey || envApiKey
+  const apiKeySource: ModelConnectionValidationResult['apiKeySource'] = uiApiKey
+    ? 'ui'
+    : envApiKey
+      ? 'env'
+      : 'missing'
+
+  if (!model) {
+    return buildConnectionFailureResult(startTime, baseURL, apiKeySource, '模型名不能为空')
+  }
+
+  if (!apiKey) {
+    return buildConnectionFailureResult(
+      startTime,
+      baseURL,
+      apiKeySource,
+      'API Key 未配置，请在表单或环境变量 OPENAI_API_KEY 中配置'
+    )
+  }
+
+  const endpoint = `${baseURL}/chat/completions`
+  try {
+    new URL(endpoint)
+  } catch {
+    return buildConnectionFailureResult(startTime, baseURL, apiKeySource, 'Base URL 无效', {
+      error: endpoint
+    })
+  }
+
+  const timeout = Math.min(
+    typeof cfg.timeout === 'number' && cfg.timeout > 0 ? cfg.timeout : 15000,
+    15000
+  )
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeout)
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: '请回复 OK' }],
+        stream: false
+      }),
+      signal: controller.signal
+    })
+
+    const responseText = await response.text()
+    const apiDetail = extractApiErrorMessage(responseText)
+
+    if (response.ok) {
+      return {
+        ok: true,
+        duration: Date.now() - startTime,
+        httpStatus: response.status,
+        apiKeySource,
+        baseURL,
+        message: `连接成功（HTTP ${response.status}）`,
+        timestamp: Date.now()
+      }
+    }
+
+    return buildConnectionFailureResult(
+      startTime,
+      baseURL,
+      apiKeySource,
+      getHttpFailureMessage(response.status, apiDetail),
+      {
+        httpStatus: response.status,
+        error: apiDetail || response.statusText
+      }
+    )
+  } catch (error) {
+    const isAbort = error instanceof Error && error.name === 'AbortError'
+    return buildConnectionFailureResult(
+      startTime,
+      baseURL,
+      apiKeySource,
+      isAbort ? `连接超时（${timeout}ms）` : '网络请求失败，请检查 Base URL 或代理配置',
+      {
+        error: error instanceof Error ? error.message : String(error)
+      }
+    )
+  } finally {
+    clearTimeout(timer)
   }
 }
 
