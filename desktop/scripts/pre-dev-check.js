@@ -35,6 +35,17 @@ function checkFileExists(filePath, description) {
   }
 }
 
+function checkModuleResolvable(moduleName, description, baseDir) {
+  try {
+    require.resolve(moduleName, { paths: [baseDir] })
+    log(`✓ ${description}`, 'green')
+    return true
+  } catch {
+    log(`✗ ${description}`, 'red')
+    return false
+  }
+}
+
 function findEnvFile() {
   const possiblePaths = [
     path.resolve(__dirname, '../../.env'),           // 项目根目录（推荐）
@@ -162,17 +173,28 @@ async function main() {
 
   // 4. 检查依赖
   log('\n4. 检查依赖安装...', 'blue')
+  const workspaceRoot = path.resolve(__dirname, '../..')
+  const desktopRoot = path.resolve(__dirname, '..')
+  const agentRoot = path.resolve(__dirname, '../../agent')
+
   allPassed &= checkFileExists(
-    path.resolve(__dirname, '../../node_modules'),
+    path.resolve(workspaceRoot, 'node_modules'),
     '根目录 node_modules 存在'
   )
-  allPassed &= checkFileExists(
-    path.resolve(__dirname, '../node_modules'),
-    'desktop node_modules 存在'
+  allPassed &= checkModuleResolvable(
+    'electron-vite',
+    'desktop 依赖 electron-vite 可解析',
+    desktopRoot
   )
-  allPassed &= checkFileExists(
-    path.resolve(__dirname, '../../agent/node_modules'),
-    'agent node_modules 存在'
+  allPassed &= checkModuleResolvable(
+    'react',
+    'desktop 依赖 react 可解析',
+    desktopRoot
+  )
+  allPassed &= checkModuleResolvable(
+    '@langchain/core',
+    'agent 依赖 @langchain/core 可解析',
+    agentRoot
   )
 
   // 总结
