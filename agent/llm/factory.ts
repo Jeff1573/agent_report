@@ -1,11 +1,11 @@
 // src/llm/factory.ts
 /**
  * LLM 工厂模块
- * 
+ *
  * 负责创建 ChatOpenAI 实例，支持配置优先级系统：
  * 1. 函数参数（overrides）- 最高优先级
  * 2. 环境变量 - 兜底配置
- * 
+ *
  * 配置来源会记录到日志中，便于调试。
  */
 import { ChatOpenAI, ChatOpenAIFields } from '@langchain/openai'
@@ -36,19 +36,19 @@ export type ChatModelOverrides = Partial<{
 
 /**
  * 统一创建 ChatOpenAI 实例（支持 OpenAI 协议兼容端点）
- * 
+ *
  * 配置优先级：
  * 1. 函数参数 overrides（最高优先级）- 来自合并配置系统
  * 2. 环境变量（兜底配置）- 从 env.ts 读取
- * 
+ *
  * @param {ChatModelOverrides} overrides 配置覆盖项
  * @returns {ChatOpenAI} ChatOpenAI 实例
- * 
+ *
  * @example
  * // 使用合并配置创建
  * const { config } = await getMergedConfig();
  * const llm = makeChatModel(config);
- * 
+ *
  * @example
  * // 使用环境变量创建（向后兼容）
  * const llm = makeChatModel();
@@ -56,21 +56,27 @@ export type ChatModelOverrides = Partial<{
 export function makeChatModel(overrides: ChatOpenAIFields & ChatModelOverrides = {}) {
   // 1) 处理鉴权：优先显式传入的 apiKey；否则走自定义头或环境变量
   const apiKeySource = (() => {
-    if (typeof (overrides as any).apiKey === 'string' && (overrides as any).apiKey.trim().length > 0) {
-      return 'param';
+    if (
+      typeof (overrides as any).apiKey === 'string' &&
+      (overrides as any).apiKey.trim().length > 0
+    ) {
+      return 'param'
     }
     if (CUSTOM_AUTH_HEADER && CUSTOM_AUTH_VALUE) {
-      return 'custom-header';
+      return 'custom-header'
     }
     if (OPENAI_API_KEY) {
-      return 'env';
+      return 'env'
     }
-    return 'missing';
-  })();
+    return 'missing'
+  })()
 
   const defaultHeaders = (() => {
     // 优先级 1: 显式传入 apiKey（来自合并配置）
-    if (typeof (overrides as any).apiKey === 'string' && (overrides as any).apiKey.trim().length > 0) {
+    if (
+      typeof (overrides as any).apiKey === 'string' &&
+      (overrides as any).apiKey.trim().length > 0
+    ) {
       return { Authorization: `Bearer ${(overrides as any).apiKey}` }
     }
     // 优先级 2: 自定义认证头（环境变量）
@@ -87,35 +93,38 @@ export function makeChatModel(overrides: ChatOpenAIFields & ChatModelOverrides =
   // 2) 处理 baseURL（兼容智谱 AI 等非标准端点）
   //    智谱 AI: https://open.bigmodel.cn/api/paas/v4/
   //    注意：智谱 AI 需要在末尾加斜杠
-  const baseURLSource = overrides.baseURL ? 'param' : (OPENAI_BASE_URL ? 'env' : 'default');
+  const baseURLSource = overrides.baseURL ? 'param' : OPENAI_BASE_URL ? 'env' : 'default'
   let baseURL = overrides.baseURL ?? OPENAI_BASE_URL
-  
+
   // 确保 baseURL 末尾有斜杠（智谱 AI 要求）
   if (baseURL && !baseURL.endsWith('/')) {
     baseURL = baseURL + '/'
   }
-  
+
   // 3) 确定最终配置及来源
-  const modelSource = overrides.model ? 'param' : (OPENAI_MODEL ? 'env' : 'missing');
-  const finalModel = overrides.model ?? OPENAI_MODEL;
-  const finalTemperature = overrides.temperature ?? 0;
-  const finalTimeout = overrides.timeout ?? TIMEOUT_MS;
-  const finalMaxRetries = overrides.maxRetries ?? MAX_RETRIES;
-  const finalStreaming = overrides.streaming ?? false;
-  const finalStreamUsage = overrides.streamUsage ?? OPENAI_STREAM_USAGE;
+  const modelSource = overrides.model ? 'param' : OPENAI_MODEL ? 'env' : 'missing'
+  const finalModel = overrides.model ?? OPENAI_MODEL
+  const finalTemperature = overrides.temperature ?? 0
+  const finalTimeout = overrides.timeout ?? TIMEOUT_MS
+  const finalMaxRetries = overrides.maxRetries ?? MAX_RETRIES
+  const finalStreaming = overrides.streaming ?? false
+  const finalStreamUsage = overrides.streamUsage ?? OPENAI_STREAM_USAGE
 
   // 4) 确定最终的 API Key（优先级：参数 > 自定义头 > 环境变量）
   const finalApiKey = (() => {
-    if (typeof (overrides as any).apiKey === 'string' && (overrides as any).apiKey.trim().length > 0) {
-      return (overrides as any).apiKey;
+    if (
+      typeof (overrides as any).apiKey === 'string' &&
+      (overrides as any).apiKey.trim().length > 0
+    ) {
+      return (overrides as any).apiKey
     }
     // 如果使用自定义认证头，不传 apiKey（避免冲突）
     if (CUSTOM_AUTH_HEADER && CUSTOM_AUTH_VALUE) {
-      return undefined;
+      return undefined
     }
     // 否则使用环境变量
-    return OPENAI_API_KEY || undefined;
-  })();
+    return OPENAI_API_KEY || undefined
+  })()
 
   // 记录配置来源（调试用）
   logger.debug('LLM 配置来源:', {
@@ -125,9 +134,9 @@ export function makeChatModel(overrides: ChatOpenAIFields & ChatModelOverrides =
     hasApiKey: Boolean(finalApiKey),
     temperature: finalTemperature,
     timeout: finalTimeout,
-    streaming: finalStreaming,
-  });
-  
+    streaming: finalStreaming
+  })
+
   // 5) 实例化模型（可随时替换 baseURL / model）
   // 注意：如果使用自定义认证头，apiKey 传 undefined，通过 defaultHeaders 认证
   const llm = new ChatOpenAI({
@@ -144,7 +153,8 @@ export function makeChatModel(overrides: ChatOpenAIFields & ChatModelOverrides =
     configuration: {
       baseURL,
       defaultHeaders
-    }
+    },
+    modelKwargs: { thinking: { type: 'disabled' } }
   })
 
   return llm

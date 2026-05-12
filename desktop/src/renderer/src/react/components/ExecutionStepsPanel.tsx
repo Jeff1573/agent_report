@@ -75,7 +75,7 @@ const getStepStatus = (step: ExecutionStep): 'wait' | 'process' | 'finish' | 'er
 /**
  * 格式化 JSON 数据（带截断）
  */
-const formatJson = (data: unknown, maxLength = 500): string => {
+const formatJson = (data: unknown, maxLength = 1000): string => {
   try {
     const jsonStr = JSON.stringify(data, null, 2)
     if (jsonStr.length > maxLength) {
