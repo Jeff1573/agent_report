@@ -1,37 +1,36 @@
 import { resolve } from 'path'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
+import { readFileSync } from 'fs'
+
+// 从 agent/package.json 动态读取依赖列表，作为 external 的唯一来源
+const agentPkg = JSON.parse(
+  readFileSync(resolve('../agent/package.json'), 'utf-8')
+)
+const agentDeps = Object.keys(agentPkg.dependencies || {})
 
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
     resolve: {
       alias: {
-        // 配置 agent 模块的别名，指向 workspace
         'agent': resolve('../agent')
       },
-      // 添加 .ts 扩展名支持
       extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json']
     },
     build: {
       rollupOptions: {
-        // 将 LangChain 相关的大型依赖标记为外部依赖
-        // 这样它们会从 node_modules 中加载，而不是被打包
-        external: [
-          '@langchain/langgraph',
-          '@langchain/langgraph-checkpoint-postgres',
-          '@langchain/core',
-          '@langchain/community',
-          '@langchain/openai',
-          '@langchain/google-genai',
-          '@langchain/mcp-adapters',
-          'langchain',
-          'chromadb',
-          'zod',
-          'pg',
-          'pg-native',
-          'pg-pool'
-        ]
+        external: (id: string) => {
+          // agent 的 dependencies 自动被 externalize
+          if (agentDeps.some((pkg) => id === pkg || id.startsWith(pkg + '/'))) {
+            return true
+          }
+          // agent 依赖的传递依赖（如 chromadb → @chroma-core/default-embed）
+          const transitiveExternals = ['@chroma-core/', 'pg', 'pg-native', 'pg-pool']
+          return transitiveExternals.some(
+            (pkg) => id === pkg || id.startsWith(pkg + '/')
+          )
+        }
       }
     }
   },
