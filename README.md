@@ -142,7 +142,7 @@ npm run demo:kb:chroma -- --q "什么是 RAG？" --collection your_collection --
 ### 运行 Agent 单独测试
 
 ```bash
-# 在 agent/ 目录执行；start 脚本通过 Bun 执行 index.ts
+# 在 agent/ 目录执行；start 脚本通过 tsx 在 Node 22 下执行 index.ts
 cd agent
 npm start -- --input "你的问题"
 ```
@@ -150,7 +150,7 @@ npm start -- --input "你的问题"
 ### 代码入库
 
 ```bash
-# 在 agent/ 目录执行（需预装 Bun）
+# 在 agent/ 目录执行
 cd agent
 npm run ingest:code -- --dir ../
 ```

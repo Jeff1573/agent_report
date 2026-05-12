@@ -5,7 +5,6 @@
 - ✅ Node.js 22.x（参见根 `package.json` 的 `engines` 限制）
 - ✅ npm 10.x（根目录提供命令转发，`desktop` 通过 `file:../agent` 依赖本地 Agent 包）
 - ✅ Git
-- ✅ Bun（仅在 `agent` 工作区运行 `start` / `ingest:code` 等脚本时需要，桌面应用本身不依赖）
 
 ## 🎯 5分钟快速启动
 
@@ -76,12 +75,12 @@ chroma run --path ./chroma_data --port 8000
 如果要使用知识库检索功能（在 `agent/` 目录执行）：
 
 ```bash
-# 入库当前仓库代码（agent 工作区）
+# 入库当前仓库代码
 cd agent
 npm run ingest:code -- --dir ../
 ```
 
-说明：`agent` 工作区的 `ingest:code` 脚本通过 Bun 执行 `scripts/ingest-code-with-ast.ts`，需先安装 Bun。
+说明：`agent` 的 CLI 脚本统一通过 `tsx` 在 Node 22 下执行，不需要额外运行时。
 
 ### 步骤 5: (可选) 单独运行环境检查
 
