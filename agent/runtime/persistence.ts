@@ -11,7 +11,6 @@
 
 import type { RunnableConfig } from '@langchain/core/runnables';
 import { MemorySaver } from '@langchain/langgraph-checkpoint';
-import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
 import { CHECKPOINT_POSTGRES_URL } from '../config/env.js';
 
 export type PersistenceMode = 'memory' | 'postgres';
@@ -32,6 +31,7 @@ export async function createCheckpointer(mode: PersistenceMode): Promise<Checkpo
       console.warn('[persistence] CHECKPOINT_POSTGRES_URL 未配置，降级为 MemorySaver');
       return new MemorySaver();
     }
+    const { PostgresSaver } = await import('@langchain/langgraph-checkpoint-postgres');
     const saver = PostgresSaver.fromConnString(String(dsn));
     // 官方建议：首次使用时 setup 以确保表结构存在
     if (typeof (saver as any).setup === 'function') {
