@@ -69,16 +69,16 @@ chroma run --path ./chroma_data --port 8000
 
 ### 3. 运行应用
 
-在仓库根目录执行（根 `package.json` 的脚本已通过 `-w ./desktop` 转发到桌面工作区）：
+在仓库根目录执行。`desktop` 启动与构建前会先执行 `cd ../agent && npm run build`，确保 Electron 主进程消费的是 `agent/dist` 产物：
 
 ```bash
-# 开发模式（会先跑 precheck 再启动 electron-vite dev）
+# 开发模式（先构建 agent/dist，再启动 electron-vite dev）
 npm run dev
 
 # 构建生产版本
-npm run build:win                # Windows（根脚本已转发）
-npm run build:mac -w desktop     # macOS
-npm run build:linux -w desktop   # Linux
+npm run build:win                # Windows
+cd desktop && npm run build:mac  # macOS
+cd desktop && npm run build:linux # Linux
 ```
 
 ## 📦 已完成的集成
@@ -189,22 +189,19 @@ THREAD_ID=default-thread
 
 ### Electron 打包配置
 
-**注意**: 需要确保 agent 模块被正确打包。
+**注意**: `agent` 不再以 TypeScript 源码形式被 `desktop` 直接消费。正确路径是先构建 `agent/dist`，再由 `desktop` 通过 `agent/package.json` 的 `exports` 动态导入。
 
-在 `desktop/electron.vite.config.ts` 中添加：
+当前 `desktop/electron.vite.config.ts` 保持 `agent/*` 为外部模块，让运行时按包导出解析：
 
 ```typescript
 export default defineConfig({
   main: {
     build: {
       rollupOptions: {
-        external: [
-          // 保持 agent 相关依赖为外部模块
-          '@langchain/langgraph',
-          '@langchain/core',
-          'chromadb',
-          // ... 其他大型依赖
-        ]
+        external: (id) => {
+          if (id === 'agent' || id.startsWith('agent/')) return true
+          // agent 的 dependencies 也保持 external，由 node_modules 提供
+        }
       }
     }
   }
@@ -215,26 +212,27 @@ export default defineConfig({
 
 ### 1. Agent 模块导入
 
-当前实现采用 **npm workspaces 别名导入**，而非相对路径 `require`，参见 `desktop/src/main/services/agentService.ts`：
+当前实现采用 **本地 npm 包 + package exports**，而非相对路径 `require` 或源码 alias，参见 `desktop/src/main/services/agentService.ts`：
 
 ```typescript
-// agent 作为 workspace，被npm install 链接到 desktop/node_modules/agent
-// electron-vite 运行时可直接使用包名动态导入
+// agent 先编译到 dist，再通过 package exports 暴露运行时入口
 const module = await import('agent/runtime/index')
 const { createAgentRuntime } = module
 ```
 
 要点：
 
-- 开发环境依赖 `npm install` 在仓库根目录创建的 workspace 符号链接，无需手写相对路径。
-- 生产打包时需确保 `agent` 模块及其运行时依赖被 `electron-builder` 正确打包（可结合 `asarUnpack` 或外部资源方式）。
+- `desktop/package.json` 通过 `"agent": "file:../agent"` 依赖本地包。
+- `agent/package.json` 的 `exports` 将 `agent/runtime/index` 映射到 `dist/runtime/index.js`。
+- `desktop` 的 `predev` / `prestart` / `prebuild` 会先构建 `agent`，开发与打包使用同一条解析路径。
 
 ### 2. 依赖打包
 
-Agent 依赖的 LangChain 生态比较大，建议：
+Agent 依赖的 LangChain 生态比较大，当前策略是：
 
-- 使用 `electron-builder` 的 `asarUnpack` 选项排除某些模块
-- 或将整个 agent 目录作为外部资源打包
+- `electron-vite` 不把 `agent/*` 打进主进程 bundle，保留为运行时包导入。
+- `electron-builder` 随 `desktop` 的生产依赖收集 `node_modules/agent` 及其依赖。
+- 如遇原生模块或需要运行时读写的资源，再针对具体模块补充 `asarUnpack`。
 
 ### 3. 性能优化
 
@@ -266,9 +264,10 @@ Agent 依赖的 LangChain 生态比较大，建议：
 **症状**: 开发环境正常，打包后启动报错
 
 **解决**:
-1. 检查 agent 模块的路径解析
-2. 确认所有依赖都正确打包
-3. 使用 `--dir` 模式测试打包结果
+1. 确认打包前已执行 `agent` 构建，存在 `agent/dist/runtime/index.js`
+2. 检查 `agent/package.json` 的 `exports` 是否包含对应入口
+3. 确认 `desktop/node_modules/agent` 来自 `"file:../agent"` 本地依赖
+4. 使用 `--dir` 模式测试打包结果
 
 ## 📚 扩展开发
 

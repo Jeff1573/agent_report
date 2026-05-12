@@ -3,7 +3,7 @@
 ## 📝 前提条件
 
 - ✅ Node.js 22.x（参见根 `package.json` 的 `engines` 限制）
-- ✅ npm 10.x（仓库使用 npm workspaces 进行依赖管理与命令转发）
+- ✅ npm 10.x（根目录提供命令转发，`desktop` 通过 `file:../agent` 依赖本地 Agent 包）
 - ✅ Git
 - ✅ Bun（仅在 `agent` 工作区运行 `start` / `ingest:code` 等脚本时需要，桌面应用本身不依赖）
 
@@ -11,14 +11,14 @@
 
 ### 步骤 1: 克隆并安装依赖
 
-本仓库以 **npm workspaces** 组织 `desktop` / `agent` / `AST_Fast` / `packages/*`，只需在仓库根目录执行一次 `npm install` 即可同时拉取所有工作区依赖并完成符号链接。
+本仓库由根 `package.json` 统一转发常用命令。`desktop` 依赖本地包 `"agent": "file:../agent"`，`agent` 会先编译到 `dist/`，再通过 package exports 被 Electron 主进程导入。
 
 ```bash
 # 已克隆项目，跳过此步
 # git clone <your-repo-url>
 # cd <repo-root>
 
-# 在仓库根目录安装所有 workspace 的依赖
+# 在仓库根目录安装依赖；根脚本会继续安装 agent 与 desktop
 npm install
 ```
 
@@ -73,22 +73,24 @@ chroma run --path ./chroma_data --port 8000
 
 ### 步骤 4: (可选) 入库代码知识
 
-如果要使用知识库检索功能（在仓库根目录执行，通过 `-w agent` 转发到 `agent` 工作区）：
+如果要使用知识库检索功能（在 `agent/` 目录执行）：
 
 ```bash
 # 入库当前仓库代码（agent 工作区）
-npm run ingest:code -w agent -- --dir ./
+cd agent
+npm run ingest:code -- --dir ../
 ```
 
 说明：`agent` 工作区的 `ingest:code` 脚本通过 Bun 执行 `scripts/ingest-code-with-ast.ts`，需先安装 Bun。
 
 ### 步骤 5: (可选) 单独运行环境检查
 
-`desktop` 工作区的 `dev` 脚本已经自动串联 `precheck`（见 `desktop/package.json` 中 `"dev": "npm run precheck && electron-vite dev"`），因此**通常不需要手动执行**。如需单独排查环境问题：
+`desktop` 的 `dev` 脚本现在会先通过 `predev` 构建 `agent/dist`，再启动 `electron-vite dev`。`precheck` 保留为独立排查命令，需要时手动执行：
 
 ```bash
-# 在仓库根目录通过 workspace 命令执行
-npm run precheck -w desktop
+# 在 desktop/ 目录执行
+cd desktop
+npm run precheck
 ```
 
 如果所有检查通过，你会看到：
@@ -100,21 +102,21 @@ npm run precheck -w desktop
 
 ### 步骤 6: 启动桌面应用
 
-推荐方式：**在仓库根目录直接运行**（根 `package.json` 的 `dev` 脚本已经通过 `npm run dev -w ./desktop` 转发到桌面工作区）：
+推荐方式：**在仓库根目录直接运行**。根 `dev` 脚本会进入 `desktop/`，而 `desktop` 的 `predev` 会先构建 `agent/dist`：
 
 ```bash
 # 在仓库根目录
 npm run dev
 ```
 
-等价命令（任选其一）：
+等价命令：
 
 ```bash
-# 显式指定 desktop workspace（也在仓库根目录执行）
-npm run dev -w ./desktop
+cd desktop
+npm run dev
 ```
 
-该命令会先执行 `precheck`，再启动 `electron-vite dev`，同时拉起主进程 / 预加载 / 渲染层的热重载。
+该命令会先执行 `cd ../agent && npm run build`，再启动 `electron-vite dev`，同时拉起主进程 / 预加载 / 渲染层的热重载。
 
 ## 🎨 界面预览
 
@@ -163,9 +165,10 @@ npm run dev -w ./desktop
 **错误**: `Agent 初始化失败: 无法找到 Agent 模块`
 
 **解决**:
-1. 确认在仓库根目录运行了 `npm install`（npm workspaces 会把 `agent` 链接到 `desktop` 的 `node_modules`）
-2. 检查 `agent/` 目录是否存在
-3. 尝试重新构建: `npm run typecheck -w agent`
+1. 确认在仓库根目录运行了 `npm install`
+2. 确认 `agent/dist/runtime/index.js` 已生成
+3. 尝试重新构建: `npm run build:agent`
+4. 确认 `desktop/node_modules/agent` 能解析到本地 `agent` 包
 
 ### Q2: ChromaDB 连接失败
 
@@ -182,7 +185,8 @@ npm run dev -w ./desktop
 
 **解决**（在仓库根目录执行）:
 ```bash
-npm run ingest:code -w agent -- --dir ./
+cd agent
+npm run ingest:code -- --dir ../
 ```
 
 ### Q4: 流式响应不显示
@@ -207,20 +211,22 @@ npm run ingest:code -w agent -- --dir ./
 ```bash
 npm run dev
 # 特点：
+# - 启动前自动构建 agent/dist
 # - 热重载
 # - 可以打开 DevTools
 # - 详细的日志输出
 ```
 
-### 跳过环境检查
+### 跳过前置脚本
 ```bash
-npm run dev:skip-check -w desktop
-# 跳过启动前的环境检查，直接启动
+cd desktop
+npm run dev:skip-check
+# 跳过 npm predev，直接启动 electron-vite dev；需确保 agent/dist 已存在
 ```
 
 ### 生产构建
 ```bash
-# Windows（在仓库根目录执行；根 package.json 的 build:win 已通过 -w ./desktop 转发）
+# Windows（在仓库根目录执行；会先构建 agent/dist）
 npm run build:win
 
 # 输出位置: desktop/dist
@@ -248,7 +254,7 @@ npm run build:win
 
 1. 查看控制台日志 (Main 进程和 Renderer 进程)
 2. 检查 `.env` 配置
-3. 运行环境检查: `npm run precheck`
+3. 运行环境检查: `cd desktop && npm run precheck`
 4. 查看完整文档
 
 ---

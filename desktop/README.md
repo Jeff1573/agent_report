@@ -6,6 +6,7 @@
 
 - Node.js：使用全局 Node.js LTS v22（建议 22.x）。不再内置本地 Node，可通过 nvm 管理：`nvm use 22`。
 - 包管理器：npm（使用系统全局安装）。
+- Agent 依赖：`desktop` 通过 `"agent": "file:../agent"` 使用本地 Agent 包；启动与构建前会先生成 `../agent/dist`。
 - 平台建议：
   - 开发与运行验证：Windows 宿主或带完整 GUI 的 Linux 桌面环境。
   - Linux 容器/WSL：可执行编译与打包，但运行 Electron 可能缺少 GUI 依赖（如 `libnspr4.so`）。
@@ -17,19 +18,20 @@
 - `src/renderer`：渲染层（React 18 + antd），入口：`index.html` + `src/renderer/src/main.tsx`。
 - `src/shared`：三端共享类型与常量（如 IPC 通道与接口）。
 - 构建产物：`out/`（electron-vite 输出），安装包产物：`dist/`（electron-builder）。
+- Agent 运行时：通过 `agent/package.json` 的 exports 从 `../agent/dist` 解析，不直接加载 `../agent/*.ts` 源码。
 
 ### 3. 常用命令（在 `desktop/` 内）
 
 - 安装依赖：`npm ci`（首次或切换平台建议使用）或 `npm install`
-- 启动开发（HMR）：`npm run dev`
+- 启动开发（HMR）：`npm run dev`（先构建 `../agent/dist`）
 - 类型检查：`npm run typecheck`
 - 代码检查：`npm run lint`
-- 生产构建：`npm run build`
+- 生产构建：`npm run build`（先构建 `../agent/dist`）
 - Windows 打包（NSIS）：`npm run build:win`
 
 ### 4. 运行与调试
 
-- 开发模式（`npm run dev`）会同时启动 main/preload/renderer 的 HMR/热重载。
+- 开发模式（`npm run dev`）会先构建 `agent` 本地包，再启动 main/preload/renderer 的 HMR/热重载。
 - 渲染层入口根节点为 `#root`（见 `src/renderer/index.html`），React 18 使用 `createRoot`。
 - 打开 DevTools：默认支持通过快捷键（F12）在开发模式下打开（`@electron-toolkit/utils`）。
 
@@ -51,6 +53,7 @@
   - `nsis.artifactName: ${productName}-${version}-setup.${ext}`
 - 生成安装包：`npm run build:win`
 - 产物位置：`dist/` 目录。
+- 打包前置：`build:win` 会先执行 `npm run build`，而 `build` 的 `prebuild` 会先构建 `../agent/dist`。
 - 代码签名/自动更新：本项目未启用，若需要可参考 electron-builder 文档与 `publish` 配置。
 
 ### 7. WSL / Linux 容器注意事项

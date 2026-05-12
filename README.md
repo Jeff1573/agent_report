@@ -16,12 +16,12 @@
 
 ## 🚀 快速开始
 
-本仓库采用 **npm workspaces**（见根 `package.json` 中 `"workspaces": ["packages/*", "desktop", "agent", "AST_Fast"]`），所有命令均在**仓库根目录**执行。
+本仓库由根 `package.json` 统一转发常用命令；`desktop` 通过 `"agent": "file:../agent"` 依赖本地 `agent` 包。`agent` 会先编译到 `dist/`，再通过 package exports 被 Electron 主进程动态导入，保证开发与打包路径一致。
 
 ### 1. 安装依赖
 
 ```bash
-# 在仓库根目录一次安装所有工作区依赖
+# 在仓库根目录安装依赖；根脚本会继续安装 agent 与 desktop
 npm install
 ```
 
@@ -47,7 +47,7 @@ docker run -p 8000:8000 chromadb/chroma
 ### 4. 运行桌面应用
 
 ```bash
-# 在仓库根目录执行；根 package.json 的 dev 脚本已通过 -w ./desktop 转发
+# 在仓库根目录执行；会先构建 agent/dist，再启动 desktop
 npm run dev
 ```
 
@@ -64,39 +64,36 @@ npm run dev
 │   │   ├── preload/  # 预加载脚本 (IPC 桥接)
 │   │   └── shared/   # 共享类型定义
 │   └── scripts/      # 工具脚本
-├── agent/            # ReAct Agent 核心
+├── agent/            # ReAct Agent 核心，本地 npm 包
 │   ├── runtime/      # Agent 运行时
 │   ├── tools/        # 工具集 (kb/search/mcp)
 │   ├── services/     # 服务层 (RAG/embeddings)
-│   └── config/       # 配置和提示词
+│   ├── config/       # 配置和提示词
+│   └── dist/         # TypeScript 编译产物，供 desktop 运行时消费
 ├── AST_Fast/         # 代码分析服务
 └── docs/             # 文档
 ```
 
 ## 安装
-- 一次性安装全部工作区依赖（在仓库根目录）：
+- 一次性安装根目录、`agent` 与 `desktop` 依赖（在仓库根目录）：
   ```sh
   npm install
   ```
-  生成根级 `package-lock.json` 并自动联结所有工作区。
+  根脚本会依次进入 `agent/` 与 `desktop/` 执行安装，`desktop/node_modules/agent` 来自 `file:../agent` 本地依赖。
 
 ## 常用命令（根目录执行）
-- 仅运行 `desktop` 工作区：
+- 桌面应用开发与构建：
   ```sh
-  npm run dev -w ./desktop
-  npm run build -w ./desktop
-  npm run typecheck -w ./desktop
-  npm run lint -w ./desktop
+  npm run dev          # 先构建 agent，再启动 desktop
+  npm run build        # 先构建 agent，再构建 desktop
+  npm run typecheck    # 先构建 agent，再检查 desktop 类型
+  npm run lint
   ```
-- 批量运行全部工作区（忽略未定义脚本）：
+- 单独处理 `agent`：
   ```sh
-  npm run dev:all
-  npm run build:all
-  npm run typecheck:all
-  npm run lint:all
-npm run test:all
+  npm run build:agent
+  npm run dev:agent    # tsc --watch
   ```
-  说明：根脚本不会被 `--workspaces` 自动包含，若需要把根脚本也并入，请在命令末尾追加 `--include-workspace-root`。
 
 ## Agent 工作区（Chroma 检索快速验证）
 
@@ -108,7 +105,8 @@ npm run test:all
 运行：
 
 ```bash
-npm run demo:kb:chroma -w agent -- --q "什么是 RAG？" --collection your_collection --k 4 --type similarity
+cd agent
+npm run demo:kb:chroma -- --q "什么是 RAG？" --collection your_collection --k 4 --type similarity
 ```
 
 说明：
@@ -116,26 +114,19 @@ npm run demo:kb:chroma -w agent -- --q "什么是 RAG？" --collection your_coll
 - 输出将附带“参考来源”（去重后的 source 列表）。
 
 ## 依赖管理
-- 向指定工作区添加依赖：
+- 向指定包添加依赖：
   ```sh
-  npm install <pkg> -w ./desktop
-  npm install <pkg> -w ./packages/<name>
+  cd desktop && npm install <pkg>
+  cd agent && npm install <pkg>
   ```
-- 仅在某工作区执行安装脚本：
+- 重新安装桌面端依赖：
   ```sh
-  npm install -w ./desktop
+  cd desktop && npm install
   ```
-
-## 新建工作区
-- 直接创建并登记到根 `workspaces`：
-  ```sh
-  npm init -w packages/<new-package>
-  ```
-  将自动创建目录与 `package.json`，并写入根的 `workspaces`。
 
 ## 常见问题
-- 批量运行顺序：遵循根 `package.json` 中 `workspaces` 数组的声明顺序。
-- 根脚本未参与批量：默认不包含，需加 `--include-workspace-root`。
+- Agent 模块找不到：先执行 `npm run build:agent`，确认 `agent/dist/runtime/index.js` 存在。
+- desktop 导入 Agent：通过 `"agent": "file:../agent"` 和 `agent/package.json` 的 `exports`，不是源码别名。
 - Node 版本不一致警告：若与 `engines` 不匹配，npm 仅警告（除非启用 engine-strict）。建议团队统一 Node 版本以减少锁文件漂移。
 
 ## 📚 文档
@@ -151,24 +142,26 @@ npm run demo:kb:chroma -w agent -- --q "什么是 RAG？" --collection your_coll
 ### 运行 Agent 单独测试
 
 ```bash
-# 在仓库根目录执行；agent 工作区的 start 脚本通过 Bun 执行 index.ts
-npm start -w agent -- --input "你的问题"
+# 在 agent/ 目录执行；start 脚本通过 Bun 执行 index.ts
+cd agent
+npm start -- --input "你的问题"
 ```
 
 ### 代码入库
 
 ```bash
-# 在仓库根目录执行（需预装 Bun）
-npm run ingest:code -w agent -- --dir ./
+# 在 agent/ 目录执行（需预装 Bun）
+cd agent
+npm run ingest:code -- --dir ../
 ```
 
 ### 构建桌面应用
 
 ```bash
-# 在仓库根目录执行；根 package.json 的 build:win 已通过 -w ./desktop 转发
+# 在仓库根目录执行；会先构建 agent/dist，再执行 Electron 构建/打包
 npm run build:win                # Windows
-npm run build:mac -w desktop     # macOS
-npm run build:linux -w desktop   # Linux
+cd desktop && npm run build:mac  # macOS
+cd desktop && npm run build:linux # Linux
 ```
 
 ## 🔧 配置说明
@@ -215,28 +208,15 @@ npm run build:linux -w desktop   # Linux
 ## 🧪 运行测试
 
 ```bash
-# Agent 功能测试
-npm run test -w agent
-
 # 类型检查
-npm run typecheck:all
+npm run typecheck
 ```
 
-## 📝 npm Workspaces 管理
-
-### 向特定工作区添加依赖
+## 📝 依赖管理
 
 ```bash
-npm install <package> -w ./desktop
-npm install <package> -w ./agent
-```
-
-### 批量运行所有工作区
-
-```bash
-npm run dev:all        # 开发模式
-npm run build:all      # 构建
-npm run typecheck:all  # 类型检查
+cd desktop && npm install <package>
+cd agent && npm install <package>
 ```
 
 ## ❓ 常见问题
