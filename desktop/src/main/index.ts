@@ -93,10 +93,11 @@ function watchMCPConfig(): void {
    * 创建并启动文件监听；在 rename 后可调用以重建 watcher。
    */
   function startWatching(): void {
-    // 初始化一次哈希作为基线，避免应用启动后第一次 change 即误报
-    lastMcpConfigHash = computeMcpConfigHash(mcpConfigPath)
-
     try {
+      settingsService.ensureMcpConfigFile()
+      // 初始化一次哈希作为基线，避免应用启动后第一次 change 即误报
+      lastMcpConfigHash = computeMcpConfigHash(mcpConfigPath)
+
       closeWatcher()
       mcpConfigWatcher = watch(mcpConfigPath, (eventType) => {
         const type = eventType as 'change' | 'rename'

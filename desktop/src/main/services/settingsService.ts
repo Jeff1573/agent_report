@@ -297,21 +297,30 @@ function createDefaultMcpConfig(): string {
 }
 
 /**
+ * 确保 MCP 配置文件存在。
+ * 首次启动时如果用户尚未创建配置，则写入空的默认配置。
+ */
+export function ensureMcpConfigFile(): string {
+  const mcpConfigPath = getMcpConfigPath()
+
+  if (!fs.existsSync(mcpConfigPath)) {
+    const defaultConfig = createDefaultMcpConfig()
+    fs.mkdirSync(path.dirname(mcpConfigPath), { recursive: true })
+    fs.writeFileSync(mcpConfigPath, defaultConfig, 'utf-8')
+    console.log(`[SettingsService] 已创建默认 MCP 配置文件: ${mcpConfigPath}`)
+  }
+
+  return mcpConfigPath
+}
+
+/**
  * 在系统默认编辑器中打开 MCP 配置文件
  * 如果文件不存在，则创建默认模板
  */
 export async function openMcpConfig(): Promise<void> {
-  const mcpConfigPath = getMcpConfigPath()
+  const mcpConfigPath = ensureMcpConfigFile()
   
   try {
-    // 检查文件是否存在，不存在则创建默认模板
-    if (!fs.existsSync(mcpConfigPath)) {
-      const defaultConfig = createDefaultMcpConfig()
-      fs.mkdirSync(path.dirname(mcpConfigPath), { recursive: true })
-      fs.writeFileSync(mcpConfigPath, defaultConfig, 'utf-8')
-      console.log(`[SettingsService] 已创建默认 MCP 配置文件: ${mcpConfigPath}`)
-    }
-    
     // 使用系统默认编辑器打开文件
     const result = await shell.openPath(mcpConfigPath)
     
@@ -440,10 +449,18 @@ export async function openAppDataFile(filename: string): Promise<void> {
     
     // 检查文件是否存在
     if (!fs.existsSync(filePath)) {
-      throw new Error(`文件不存在: ${filename}`)
+      if (filename === MCP_CONFIG_FILE) {
+        ensureMcpConfigFile()
+      } else {
+        throw new Error(`文件不存在: ${filename}`)
+      }
     }
     
-    await shell.openPath(filePath)
+    const result = await shell.openPath(filePath)
+    if (result) {
+      throw new Error(`打开文件失败: ${result}`)
+    }
+    
     console.log(`[SettingsService] 已在默认编辑器中打开文件: ${filePath}`)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
