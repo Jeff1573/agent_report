@@ -16,9 +16,12 @@
 
 ## 🚀 快速开始
 
+本仓库采用 **npm workspaces**（见根 `package.json` 中 `"workspaces": ["packages/*", "desktop", "agent", "AST_Fast"]`），所有命令均在**仓库根目录**执行。
+
 ### 1. 安装依赖
 
 ```bash
+# 在仓库根目录一次安装所有工作区依赖
 npm install
 ```
 
@@ -33,15 +36,18 @@ CHROMA_URL=http://localhost:8000
 KB_COLLECTION=mindforge_kb
 ```
 
-### 3. 启动 ChromaDB
+也可跳过此步，等应用启动后在“设置”页面进行界面配置（推荐）。
+
+### 3. （可选）启动 ChromaDB
 
 ```bash
 docker run -p 8000:8000 chromadb/chroma
 ```
 
-### 4. 运行应用
+### 4. 运行桌面应用
 
 ```bash
+# 在仓库根目录执行；根 package.json 的 dev 脚本已通过 -w ./desktop 转发
 npm run dev
 ```
 
@@ -50,7 +56,7 @@ npm run dev
 ## 📦 项目结构
 
 ```
-mindForge_re/
+<repo-root>/
 ├── desktop/          # Electron 桌面应用
 │   ├── src/
 │   │   ├── main/     # 主进程 (Agent Runtime)
@@ -65,6 +71,7 @@ mindForge_re/
 │   └── config/       # 配置和提示词
 ├── AST_Fast/         # 代码分析服务
 └── docs/             # 文档
+```
 
 ## 安装
 - 一次性安装全部工作区依赖（在仓库根目录）：
@@ -135,30 +142,33 @@ npm run demo:kb:chroma -w agent -- --q "什么是 RAG？" --collection your_coll
 
 - [快速入门指南](docs/QUICK_START.md) - 5分钟快速上手
 - [Electron 集成文档](docs/ELECTRON_INTEGRATION.md) - 完整架构说明
-- [Agent 实现分析](docs/AGENT_ANALYSIS.md) - ReAct Agent 特性分析
+- [流式验证说明](docs/STREAMING_VALIDATION.md) - LLM 流式能力验证
 - [RAG 优化方案](docs/RAG优化方案.md) - 知识库检索优化
+- [项目描述-多工具智能代理](docs/项目描述-多工具智能代理.md) - 项目背景与能力描述
 
 ## 🛠️ 开发指南
 
 ### 运行 Agent 单独测试
 
 ```bash
-cd agent
-npm start -- --input "你的问题"
+# 在仓库根目录执行；agent 工作区的 start 脚本通过 Bun 执行 index.ts
+npm start -w agent -- --input "你的问题"
 ```
 
 ### 代码入库
 
 ```bash
-cd agent
-npm run ingest:code -- --dir ../
+# 在仓库根目录执行（需预装 Bun）
+npm run ingest:code -w agent -- --dir ./
 ```
 
 ### 构建桌面应用
 
 ```bash
-npm run build:win  # Windows
-npm run build:mac  # macOS
+# 在仓库根目录执行；根 package.json 的 build:win 已通过 -w ./desktop 转发
+npm run build:win                # Windows
+npm run build:mac -w desktop     # macOS
+npm run build:linux -w desktop   # Linux
 ```
 
 ## 🔧 配置说明

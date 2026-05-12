@@ -2,20 +2,23 @@
 
 ## 📝 前提条件
 
-- ✅ Node.js 22.x
-- ✅ npm 或 pnpm
+- ✅ Node.js 22.x（参见根 `package.json` 的 `engines` 限制）
+- ✅ npm 10.x（仓库使用 npm workspaces 进行依赖管理与命令转发）
 - ✅ Git
+- ✅ Bun（仅在 `agent` 工作区运行 `start` / `ingest:code` 等脚本时需要，桌面应用本身不依赖）
 
 ## 🎯 5分钟快速启动
 
 ### 步骤 1: 克隆并安装依赖
 
+本仓库以 **npm workspaces** 组织 `desktop` / `agent` / `AST_Fast` / `packages/*`，只需在仓库根目录执行一次 `npm install` 即可同时拉取所有工作区依赖并完成符号链接。
+
 ```bash
 # 已克隆项目，跳过此步
 # git clone <your-repo-url>
-# cd mindForge_re
+# cd <repo-root>
 
-# 安装所有 workspace 的依赖
+# 在仓库根目录安装所有 workspace 的依赖
 npm install
 ```
 
@@ -70,21 +73,22 @@ chroma run --path ./chroma_data --port 8000
 
 ### 步骤 4: (可选) 入库代码知识
 
-如果要使用知识库检索功能：
+如果要使用知识库检索功能（在仓库根目录执行，通过 `-w agent` 转发到 `agent` 工作区）：
 
 ```bash
-# 切换到 agent workspace
-cd agent
-
-# 入库当前项目代码
-npm run ingest:code -- --dir ../
+# 入库当前仓库代码（agent 工作区）
+npm run ingest:code -w agent -- --dir ./
 ```
 
-### 步骤 5: 运行环境检查
+说明：`agent` 工作区的 `ingest:code` 脚本通过 Bun 执行 `scripts/ingest-code-with-ast.ts`，需先安装 Bun。
+
+### 步骤 5: (可选) 单独运行环境检查
+
+`desktop` 工作区的 `dev` 脚本已经自动串联 `precheck`（见 `desktop/package.json` 中 `"dev": "npm run precheck && electron-vite dev"`），因此**通常不需要手动执行**。如需单独排查环境问题：
 
 ```bash
-cd desktop
-npm run precheck
+# 在仓库根目录通过 workspace 命令执行
+npm run precheck -w desktop
 ```
 
 如果所有检查通过，你会看到：
@@ -92,17 +96,25 @@ npm run precheck
 ✓ 所有必需项检查通过！
 可以运行: npm run dev
 ```
-未配置 RAG 时会看到提示：“禁用内部检索（kb_search）”，不影响启动与聊天功能。
+未配置 RAG 时会看到提示："禁用内部检索（kb_search）"，不影响启动与聊天功能。
 
-### 步骤 6: 启动应用
+### 步骤 6: 启动桌面应用
+
+推荐方式：**在仓库根目录直接运行**（根 `package.json` 的 `dev` 脚本已经通过 `npm run dev -w ./desktop` 转发到桌面工作区）：
 
 ```bash
-# 在 desktop 目录下
-npm run dev
-
-# 或在项目根目录
+# 在仓库根目录
 npm run dev
 ```
+
+等价命令（任选其一）：
+
+```bash
+# 显式指定 desktop workspace（也在仓库根目录执行）
+npm run dev -w ./desktop
+```
+
+该命令会先执行 `precheck`，再启动 `electron-vite dev`，同时拉起主进程 / 预加载 / 渲染层的热重载。
 
 ## 🎨 界面预览
 
@@ -151,9 +163,9 @@ npm run dev
 **错误**: `Agent 初始化失败: 无法找到 Agent 模块`
 
 **解决**:
-1. 确认在项目根目录运行了 `npm install`
+1. 确认在仓库根目录运行了 `npm install`（npm workspaces 会把 `agent` 链接到 `desktop` 的 `node_modules`）
 2. 检查 `agent/` 目录是否存在
-3. 尝试重新构建: `cd agent && npm run typecheck`
+3. 尝试重新构建: `npm run typecheck -w agent`
 
 ### Q2: ChromaDB 连接失败
 
@@ -168,10 +180,9 @@ npm run dev
 
 **原因**: 还没有入库数据
 
-**解决**:
+**解决**（在仓库根目录执行）:
 ```bash
-cd agent
-npm run ingest:code -- --dir ../
+npm run ingest:code -w agent -- --dir ./
 ```
 
 ### Q4: 流式响应不显示
@@ -203,13 +214,13 @@ npm run dev
 
 ### 跳过环境检查
 ```bash
-npm run dev:skip-check
+npm run dev:skip-check -w desktop
 # 跳过启动前的环境检查，直接启动
 ```
 
 ### 生产构建
 ```bash
-# Windows
+# Windows（在仓库根目录执行；根 package.json 的 build:win 已通过 -w ./desktop 转发）
 npm run build:win
 
 # 输出位置: desktop/dist
@@ -227,9 +238,9 @@ npm run build:win
 ## 📚 相关文档
 
 - [完整集成指南](./ELECTRON_INTEGRATION.md)
-- [Agent 实现分析](./AGENT_ANALYSIS.md)
-- [工具开发指南](../agent/tools/README.md)
+- [流式验证说明](./STREAMING_VALIDATION.md)
 - [RAG 优化方案](./RAG优化方案.md)
+- [项目描述-多工具智能代理](./项目描述-多工具智能代理.md)
 
 ## 🆘 获取帮助
 

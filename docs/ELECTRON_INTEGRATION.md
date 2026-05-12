@@ -69,14 +69,16 @@ chroma run --path ./chroma_data --port 8000
 
 ### 3. 运行应用
 
+在仓库根目录执行（根 `package.json` 的脚本已通过 `-w ./desktop` 转发到桌面工作区）：
+
 ```bash
-# 开发模式
+# 开发模式（会先跑 precheck 再启动 electron-vite dev）
 npm run dev
 
 # 构建生产版本
-npm run build:win    # Windows
-npm run build:mac    # macOS
-npm run build:linux  # Linux
+npm run build:win                # Windows（根脚本已转发）
+npm run build:mac -w desktop     # macOS
+npm run build:linux -w desktop   # Linux
 ```
 
 ## 📦 已完成的集成
@@ -211,19 +213,21 @@ export default defineConfig({
 
 ## ⚠️ 注意事项
 
-### 1. 路径问题
+### 1. Agent 模块导入
 
-在 `agentService.ts` 中，Agent 模块的导入路径需要根据打包后的实际结构调整：
+当前实现采用 **npm workspaces 别名导入**，而非相对路径 `require`，参见 `desktop/src/main/services/agentService.ts`：
 
 ```typescript
-// 开发环境
-const agentPath = '../../../../../agent/runtime/index.js'
-
-// 生产环境可能需要调整
-const agentPath = app.isPackaged 
-  ? path.join(process.resourcesPath, 'agent/runtime/index.js')
-  : '../../../../../agent/runtime/index.js'
+// agent 作为 workspace，被npm install 链接到 desktop/node_modules/agent
+// electron-vite 运行时可直接使用包名动态导入
+const module = await import('agent/runtime/index')
+const { createAgentRuntime } = module
 ```
+
+要点：
+
+- 开发环境依赖 `npm install` 在仓库根目录创建的 workspace 符号链接，无需手写相对路径。
+- 生产打包时需确保 `agent` 模块及其运行时依赖被 `electron-builder` 正确打包（可结合 `asarUnpack` 或外部资源方式）。
 
 ### 2. 依赖打包
 
@@ -270,7 +274,7 @@ Agent 依赖的 LangChain 生态比较大，建议：
 
 ### 添加自定义工具
 
-1. 在 `agent/tools/` 下创建新工具
+1. 在 `agent/tools/` 下创建新工具（参考现有的 `kb.ts` / `duckduckgo.ts` / `mcp.ts`）
 2. 在 `agent/tools/registry.ts` 中注册
 3. 无需修改 Electron 代码，Agent 会自动加载
 
@@ -309,9 +313,10 @@ recognition.onresult = (event) => {
 
 ## 📖 相关文档
 
-- [Agent 实现文档](../agent/README.md)
-- [工具开发指南](../agent/tools/README.md)
-- [部署指南](./DEPLOYMENT.md)
+- [快速入门指南](./QUICK_START.md)
+- [流式验证说明](./STREAMING_VALIDATION.md)
+- [RAG 优化方案](./RAG优化方案.md)
+- [Agent Prompt 说明](../agent/config/README-prompts.md)
 
 ---
 
