@@ -82,6 +82,10 @@ class SegmentAccumulator {
     if (!this.current) this.start();
     const seg = this.current!;
     switch (ev.type) {
+      case 'model-token':
+        // 流式正文不会产生 assistant-message，补引用判断需要读取这里累加的文本。
+        seg.assistantText = `${seg.assistantText ?? ''}${ev.token}`;
+        break;
       case 'assistant-message':
         seg.assistantText = ev.content;
         break;

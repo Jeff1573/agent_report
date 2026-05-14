@@ -23,6 +23,7 @@ const { Text } = Typography
 
 const STREAM_FLUSH_INTERVAL_MS = 33 // 将高频 token 合并到约 30FPS，降低长回答重渲染压力
 const AUTO_SCROLL_THRESHOLD_PX = 96 // 距离底部小于该值时，认为用户仍在跟随最新回答
+const CITATION_ONLY_MESSAGE_RE = /^\s*(?:#{1,6}\s*)?参考来源[:：]?\s*(?:\n|$)/
 
 /**
  * 执行步骤类型
@@ -63,6 +64,23 @@ function generateSessionTitle(messages: Message[]): string {
   const content = firstUserMessage.content.trim()
   if (content.length <= 30) return content
   return content.slice(0, 30) + '...'
+}
+
+/**
+ * 合并助手完整消息。
+ *
+ * 后端补充 RAG 引用来源时也会发送 assistant-message，
+ * 这类消息应追加到已流式输出的正文后面，避免覆盖正文。
+ */
+function mergeAssistantMessageContent(current: string, incoming: string): string {
+  const incomingText = incoming.trim()
+  if (!incomingText) return current
+
+  if (current.trim() && CITATION_ONLY_MESSAGE_RE.test(incoming)) {
+    return `${current.trimEnd()}\n\n${incomingText}`
+  }
+
+  return incoming
 }
 
 export const AgentChat: React.FC = () => {
@@ -350,7 +368,7 @@ export const AgentChat: React.FC = () => {
 
       case 'assistant-message':
         if (evt.content) {
-          streamingContentRef.current = evt.content
+          streamingContentRef.current = mergeAssistantMessageContent(streamingContentRef.current, evt.content)
           scheduleStreamingContentFlush()
         }
         break
