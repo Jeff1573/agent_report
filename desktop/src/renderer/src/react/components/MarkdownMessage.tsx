@@ -16,14 +16,21 @@ import 'highlight.js/styles/github-dark.css' // 代码高亮主题
 
 interface MarkdownMessageProps {
   content: string
+  /** 流式阶段关闭代码高亮，避免长回答每次刷新都重新跑语法分析 */
+  enableHighlight?: boolean
 }
 
-export const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content }) => {
+export const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, enableHighlight = true }) => {
+  const rehypePlugins = React.useMemo(
+    () => enableHighlight ? [rehypeHighlight, rehypeRaw] : [rehypeRaw],
+    [enableHighlight]
+  )
+
   return (
     <div className="markdown-content">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight, rehypeRaw]}
+        rehypePlugins={rehypePlugins}
         components={{
           // 自定义渲染组件
           code: ({ inline, className, children, ...props }: { inline?: boolean; className?: string; children?: React.ReactNode }) => {

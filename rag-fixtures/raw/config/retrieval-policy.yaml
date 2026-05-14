@@ -1,0 +1,30 @@
+# RAG 检索策略测试配置
+policy_id: RAG-FIXTURE-RETRIEVAL-2026-004
+module: retrieval
+version: 1.1.0
+updated_at: 2026-05-14
+
+defaults:
+  collection: mindforge_kb
+  search_type: mmr
+  k: 6
+  fetch_k: 32
+  mmr_lambda: 0.35
+  context_char_limit: 4000
+
+quality_gates:
+  require_source_citation: true
+  min_hit_count: 2
+  fallback_when_empty: similarity
+
+metadata_filters:
+  preferred_fields:
+    - module
+    - version
+    - updated_at
+    - source
+  tenant_field: tenantId
+
+sentinel:
+  key: RAG_SENTINEL_POLICY_OMEGA
+  expected_answer: "默认检索策略使用 MMR，k 为 6，fetchK 为 32，lambda 为 0.35。"

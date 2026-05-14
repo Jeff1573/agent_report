@@ -7,7 +7,7 @@
  * - 会话历史管理
  */
 
-import React, { useState, useRef, useEffect, JSX } from 'react'
+import React, { useState, useRef, useEffect, useCallback, JSX } from 'react'
 import { Input, Button, Card, Space, Typography, Tag, Spin, message as antMessage, Tooltip, Modal, Select, Switch, Form } from 'antd'
 import { SendOutlined, StopOutlined, RobotOutlined, UserOutlined, ToolOutlined, PlusOutlined, DeleteOutlined, HistoryOutlined, SettingOutlined, DatabaseOutlined } from '@ant-design/icons'
 import type { AgentStreamEvent, SessionData } from '../../../../shared/ipc'
@@ -20,6 +20,9 @@ import type { ModelConfig } from '../../../../shared/ipc'
 
 const { TextArea } = Input
 const { Text } = Typography
+
+const STREAM_FLUSH_INTERVAL_MS = 33 // 将高频 token 合并到约 30FPS，降低长回答重渲染压力
+const AUTO_SCROLL_THRESHOLD_PX = 96 // 距离底部小于该值时，认为用户仍在跟随最新回答
 
 /**
  * 执行步骤类型
@@ -85,12 +88,77 @@ export const AgentChat: React.FC = () => {
   const [ragCollection, setRagCollection] = useState<string | undefined>(undefined)
   const [ragModalOpen, setRagModalOpen] = useState(false)
   const [ragForm] = Form.useForm<{ enabled: boolean; configId?: string; collection?: string }>()
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const streamingContentRef = useRef('')
+  const streamFlushTimerRef = useRef<number | null>(null)
+  const shouldStickToBottomRef = useRef(true)
+
+  const isNearBottom = useCallback((): boolean => {
+    const container = messagesContainerRef.current
+    if (!container) return true
+
+    const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+    return distanceToBottom <= AUTO_SCROLL_THRESHOLD_PX
+  }, [])
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto'): void => {
+    const container = messagesContainerRef.current
+    if (!container || !shouldStickToBottomRef.current) return
+
+    window.requestAnimationFrame(() => {
+      if (behavior === 'auto') {
+        container.scrollTop = container.scrollHeight
+        return
+      }
+
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior
+      })
+    })
+  }, [])
+
+  const handleMessagesScroll = useCallback((): void => {
+    shouldStickToBottomRef.current = isNearBottom()
+  }, [isNearBottom])
+
+  const clearStreamFlushTimer = useCallback((): void => {
+    if (streamFlushTimerRef.current === null) return
+
+    window.clearTimeout(streamFlushTimerRef.current)
+    streamFlushTimerRef.current = null
+  }, [])
+
+  const flushStreamingContent = useCallback((): void => {
+    clearStreamFlushTimer()
+    setCurrentContent(streamingContentRef.current)
+  }, [clearStreamFlushTimer])
+
+  const scheduleStreamingContentFlush = useCallback((): void => {
+    if (streamFlushTimerRef.current !== null) return
+
+    // 高频 token 先进入 ref 缓冲区，再按固定节奏同步到 React 状态。
+    streamFlushTimerRef.current = window.setTimeout(() => {
+      streamFlushTimerRef.current = null
+      setCurrentContent(streamingContentRef.current)
+    }, STREAM_FLUSH_INTERVAL_MS)
+  }, [])
 
   // 自动滚动到底部
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, currentContent])
+    scrollToBottom('smooth')
+  }, [messages, scrollToBottom])
+
+  // 流式输出期间使用即时滚动，避免 smooth 动画被高频内容更新反复打断。
+  useEffect(() => {
+    scrollToBottom('auto')
+  }, [currentContent, scrollToBottom])
+
+  useEffect(() => {
+    return () => {
+      clearStreamFlushTimer()
+    }
+  }, [clearStreamFlushTimer])
 
   // 应用启动时加载最近的会话
   useEffect(() => {
@@ -201,6 +269,9 @@ export const AgentChat: React.FC = () => {
     const messageToSend = input
     setInput('')
     setIsLoading(true)
+    shouldStickToBottomRef.current = true
+    streamingContentRef.current = ''
+    clearStreamFlushTimer()
     setCurrentContent('')
     setCurrentToolCalls([])
     setCurrentExecutionSteps([])  // 清空执行步骤
@@ -226,34 +297,38 @@ export const AgentChat: React.FC = () => {
       antMessage.error(`发送失败: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
       // 🆕 流式结束后，保存最终的助手消息（包含所有执行步骤）
-      setCurrentContent(prevContent => {
-        setCurrentToolCalls(prevToolCalls => {
-          setCurrentExecutionSteps(prevSteps => {
-            if (prevContent || prevSteps.length > 0) {
-              const finalSteps = prevContent ? [...prevSteps, {
-                id: `step-${Date.now()}-answer`,
-                type: 'answer' as const,
-                stage: 'answer' as const,
-                content: prevContent,
-                timestamp: Date.now(),
-                status: 'completed' as const
-              }] : prevSteps
+      flushStreamingContent()
+      const finalContent = streamingContentRef.current
 
-              setMessages(prevMsgs => [...prevMsgs, {
-                id: Date.now().toString(),
-                role: 'assistant',
-                content: prevContent,
-                timestamp: Date.now(),
-                toolCalls: prevToolCalls.length > 0 ? [...prevToolCalls] : undefined,
-                executionSteps: finalSteps.length > 0 ? finalSteps : undefined
-              }])
-            }
-            return []
-          })
+      setCurrentToolCalls(prevToolCalls => {
+        setCurrentExecutionSteps(prevSteps => {
+          if (finalContent || prevSteps.length > 0) {
+            const finalSteps = finalContent ? [...prevSteps, {
+              id: `step-${Date.now()}-answer`,
+              type: 'answer' as const,
+              stage: 'answer' as const,
+              content: finalContent,
+              timestamp: Date.now(),
+              status: 'completed' as const
+            }] : prevSteps
+
+            setMessages(prevMsgs => [...prevMsgs, {
+              id: Date.now().toString(),
+              role: 'assistant',
+              content: finalContent,
+              timestamp: Date.now(),
+              toolCalls: prevToolCalls.length > 0 ? [...prevToolCalls] : undefined,
+              executionSteps: finalSteps.length > 0 ? finalSteps : undefined
+            }])
+          }
+
           return []
         })
-        return ''
+        return []
       })
+
+      streamingContentRef.current = ''
+      setCurrentContent('')
       setCurrentStage(undefined)
       setIsLoading(false)
     }
@@ -262,19 +337,21 @@ export const AgentChat: React.FC = () => {
   const handleStreamEvent = (evt: AgentStreamEvent): void => {
     // 更新当前阶段
     if (evt.stage) {
-      setCurrentStage(evt.stage)
+      setCurrentStage(prev => prev === evt.stage ? prev : evt.stage)
     }
 
     switch (evt.type) {
       case 'model-token':
         if (evt.token) {
-          setCurrentContent(prev => prev + evt.token)
+          streamingContentRef.current += evt.token
+          scheduleStreamingContentFlush()
         }
         break
 
       case 'assistant-message':
         if (evt.content) {
-          setCurrentContent(evt.content)
+          streamingContentRef.current = evt.content
+          scheduleStreamingContentFlush()
         }
         break
 
@@ -383,6 +460,9 @@ export const AgentChat: React.FC = () => {
         setCurrentToolCalls([])
         setCurrentExecutionSteps([])
         setCurrentStage(undefined)
+        streamingContentRef.current = ''
+        clearStreamFlushTimer()
+        shouldStickToBottomRef.current = true
         // 生成新的 sessionId
         setSessionId(`session-${Date.now()}`)
         antMessage.success('已开始新对话')
@@ -405,6 +485,9 @@ export const AgentChat: React.FC = () => {
         setCurrentToolCalls([])
         setCurrentExecutionSteps([])
         setCurrentStage(undefined)
+        streamingContentRef.current = ''
+        clearStreamFlushTimer()
+        shouldStickToBottomRef.current = true
         
         // 立即保存空会话到文件，确保重启后仍然是空的
         try {
@@ -434,6 +517,9 @@ export const AgentChat: React.FC = () => {
     setCurrentToolCalls([])
     setCurrentExecutionSteps([])
     setCurrentStage(undefined)
+    streamingContentRef.current = ''
+    clearStreamFlushTimer()
+    shouldStickToBottomRef.current = true
   }
 
   const renderMessage = (msg: Message): JSX.Element => {
@@ -633,7 +719,7 @@ export const AgentChat: React.FC = () => {
           }}
         >
         {/* 消息列表容器 - 关键：这里需要正确设置滚动 */}
-        <div className="messages-container">
+        <div className="messages-container" ref={messagesContainerRef} onScroll={handleMessagesScroll}>
           {messages.length === 0 && !isLoading && (
             <div className="empty-state">
               <RobotOutlined className="empty-state-icon" />
@@ -678,7 +764,7 @@ export const AgentChat: React.FC = () => {
 
                 {/* 流式内容也使用 Markdown 渲染 */}
                 <div className="message-content assistant">
-                  <MarkdownMessage content={currentContent} />
+                  <MarkdownMessage content={currentContent} enableHighlight={false} />
                 </div>
               </div>
             </div>
@@ -690,8 +776,6 @@ export const AgentChat: React.FC = () => {
               <Spin tip="思考中..." />
             </div>
           )}
-
-          <div ref={messagesEndRef} />
         </div>
 
         {/* 输入区域 - 固定在底部，不参与滚动 */}
