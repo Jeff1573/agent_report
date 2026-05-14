@@ -10,3 +10,4 @@ agent/logs/*
 .env.local
 .env.*.local
 !.env.example
+rag-fixtures/
