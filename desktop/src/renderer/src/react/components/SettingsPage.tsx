@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Alert, Button, Card, Descriptions, Divider, Form, Input, InputNumber, List, Modal, Space, Typography, message, Upload, Tag, Tooltip, Switch, Tabs, Select } from 'antd'
 import { LeftOutlined, PlusOutlined, EditOutlined, DeleteOutlined, CheckOutlined, UploadOutlined, DownloadOutlined, SettingOutlined, CheckCircleOutlined, CloseCircleOutlined, FolderOpenOutlined, FileAddOutlined } from '@ant-design/icons'
-import type { ModelConfig, VectorDbConfig, RagValidationResult, ModelConnectionValidationResult } from '../../../../shared/ipc'
+import type { ModelConfig, StreamingValidationResult, VectorDbConfig, RagValidationResult, ModelConnectionValidationResult } from '../../../../shared/ipc'
 import { useNavigate } from 'react-router-dom'
 
 const { Text } = Typography
@@ -22,6 +22,7 @@ export const SettingsPage: React.FC = () => {
   const [validating, setValidating] = useState(false)
   const [connectionValidating, setConnectionValidating] = useState(false)
   const [connectionResult, setConnectionResult] = useState<ModelConnectionValidationResult | null>(null)
+  const [pendingStreamingValidation, setPendingStreamingValidation] = useState<StreamingValidationResult | undefined>(undefined)
   const [form] = Form.useForm<ModelConfig>()
 
   // RAG 配置状态
@@ -74,6 +75,7 @@ export const SettingsPage: React.FC = () => {
   const onAdd = (): void => {
     setEditing(null)
     setConnectionResult(null)
+    setPendingStreamingValidation(undefined)
     setConnectionValidating(false)
     form.resetFields()
     setModalOpen(true)
@@ -82,6 +84,7 @@ export const SettingsPage: React.FC = () => {
   const onEdit = (cfg: ModelConfig): void => {
     setEditing(cfg)
     setConnectionResult(null)
+    setPendingStreamingValidation(cfg.streamingValidation)
     setConnectionValidating(false)
     form.setFieldsValue(cfg)
     setModalOpen(true)
@@ -129,6 +132,7 @@ export const SettingsPage: React.FC = () => {
     timeout: typeof values.timeout === 'number' ? values.timeout : 60000,
     maxRetries: typeof values.maxRetries === 'number' ? values.maxRetries : 2,
     streaming: typeof options.streaming === 'boolean' ? options.streaming : Boolean(values.streaming),
+    streamingValidation: pendingStreamingValidation,
     updatedAt: Date.now()
   })
 
@@ -139,6 +143,7 @@ export const SettingsPage: React.FC = () => {
       await window.api.settings.upsertModel(payload)
       setModalOpen(false)
       setConnectionResult(null)
+      setPendingStreamingValidation(undefined)
       message.success(editing ? '已更新' : '已新增')
       load()
     } catch (e) {
@@ -207,12 +212,9 @@ export const SettingsPage: React.FC = () => {
       // 构建临时配置进行验证
       const tempConfig = buildModelPayload(values, { streaming: true })
 
-      // 临时保存配置以便验证
-      await window.api.settings.upsertModel(tempConfig)
-      const modelId = editing?.id || tempConfig.id
-
-      // 执行验证
-      const result = await window.api.settings.validateStreaming(modelId)
+      // 只验证当前表单配置，不提前写入 settings.json。
+      const result = await window.api.settings.validateStreamingConfig(tempConfig)
+      setPendingStreamingValidation(result)
       
       message.destroy('validating')
 
@@ -241,13 +243,12 @@ export const SettingsPage: React.FC = () => {
         form.setFieldValue('streaming', false)
       }
 
-      // 重新加载以更新验证结果
-      await load()
     } catch (e) {
       message.destroy('validating')
       const errorMsg = e instanceof Error ? e.message : '验证失败'
       message.error(errorMsg)
       form.setFieldValue('streaming', false)
+      setPendingStreamingValidation(undefined)
     } finally {
       setValidating(false)
     }
@@ -649,6 +650,7 @@ export const SettingsPage: React.FC = () => {
         onCancel={() => {
           setModalOpen(false)
           setConnectionResult(null)
+          setPendingStreamingValidation(undefined)
         }}
         onOk={onSubmit}
         okText={editing ? '保存' : '创建'}
@@ -657,7 +659,12 @@ export const SettingsPage: React.FC = () => {
           form={form}
           layout="vertical"
           initialValues={{ temperature: 0, timeout: 60000, maxRetries: 2, streaming: false }}
-          onValuesChange={() => setConnectionResult(null)}
+          onValuesChange={(changedValues) => {
+            setConnectionResult(null)
+            if (!Object.prototype.hasOwnProperty.call(changedValues, 'streaming')) {
+              setPendingStreamingValidation(undefined)
+            }
+          }}
         >
           <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
             <Input placeholder="如：默认OpenAI 或 公司网关" />
@@ -939,6 +946,3 @@ export const SettingsPage: React.FC = () => {
     </div>
   )
 }
-
-
-

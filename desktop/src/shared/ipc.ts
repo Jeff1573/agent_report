@@ -26,6 +26,7 @@ export const IPC_CHANNELS = {
   SETTINGS_MODEL_UPSERT: 'settings/model/upsert',
   SETTINGS_MODEL_DELETE: 'settings/model/delete',
   SETTINGS_MODEL_VALIDATE_STREAMING: 'settings/model/validateStreaming',
+  SETTINGS_MODEL_VALIDATE_STREAMING_CONFIG: 'settings/model/validateStreamingConfig',
   SETTINGS_MODEL_VALIDATE_CONNECTION: 'settings/model/validateConnection',
   SETTINGS_EXPORT: 'settings/export',
   SETTINGS_IMPORT: 'settings/import',
@@ -295,6 +296,8 @@ export interface PreloadApi {
     deleteModel: (id: string) => Promise<void>
     /** 验证模型的流式支持 */
     validateStreaming: (modelId: string) => Promise<StreamingValidationResult>
+    /** 验证当前表单模型配置的流式支持，不会写入设置文件 */
+    validateStreamingConfig: (config: ModelConfig) => Promise<StreamingValidationResult>
     /** 验证当前模型配置是否可连接 */
     validateModelConnection: (config: ModelConfig) => Promise<ModelConnectionValidationResult>
     /** 导出设置为 JSON 字符串 */
@@ -337,4 +340,3 @@ export interface PreloadApi {
     ) => Promise<{ total: number; processed: number; codeFiles: number; docFiles: number }>
   }
 }
-

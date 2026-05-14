@@ -94,6 +94,7 @@ export async function upsertModelConfig(cfg: ModelConfig): Promise<void> {
     timeout: typeof cfg.timeout === 'number' ? cfg.timeout : 60000,
     maxRetries: typeof cfg.maxRetries === 'number' ? cfg.maxRetries : 2,
     streaming: Boolean(cfg.streaming),
+    streamingValidation: cfg.streamingValidation,
     updatedAt: now
   }
 
@@ -480,6 +481,73 @@ export async function openMcpConfig(): Promise<void> {
 }
 
 /**
+ * 基于模型配置执行流式能力验证。
+ * 该函数只负责调用验证器，不负责写入 settings.json，避免“验证即创建配置”的副作用。
+ */
+async function runStreamingValidation(modelConfig: ModelConfig): Promise<StreamingValidationResult> {
+  const model = (modelConfig.model || '').trim()
+  if (!model) {
+    throw new Error('模型名不能为空')
+  }
+
+  const userDataPath = app.getPath('userData')
+  process.env.MF_USER_DATA_DIR = userDataPath
+
+  // @ts-ignore - agent workspace 在运行时可用，但 TypeScript 配置不包含跨 workspace 引用
+  const { validateStreamingSupport } = await import('agent/llm/streaming-validator')
+
+  const validateConfig = {
+    provider: modelConfig.baseURL ? 'custom' : 'openai',
+    model,
+    apiKey: (modelConfig.apiKey || '').trim(),
+    baseURL: (modelConfig.baseURL || '').trim() || undefined,
+    temperature: modelConfig.temperature ?? 0,
+    timeout: modelConfig.timeout ?? 60000,
+    maxRetries: modelConfig.maxRetries ?? 2
+  }
+
+  console.log(`[SettingsService] 验证配置:`, {
+    model: validateConfig.model,
+    baseURL: validateConfig.baseURL,
+    hasApiKey: !!validateConfig.apiKey
+  })
+
+  return validateStreamingSupport(validateConfig, 15000)
+}
+
+/**
+ * 验证当前表单中的模型配置是否支持流式输出。
+ * 用于新增/编辑弹窗中的开关即时校验，不会创建或更新模型配置。
+ */
+export async function validateModelStreamingConfig(
+  cfg: ModelConfig
+): Promise<StreamingValidationResult> {
+  try {
+    console.log(`[SettingsService] 开始验证临时模型配置流式支持`)
+    const result = await runStreamingValidation(cfg)
+
+    console.log(`[SettingsService] 临时配置验证完成:`, {
+      supported: result.supported,
+      duration: result.duration,
+      firstTokenLatency: result.firstTokenLatency,
+      error: result.error
+    })
+
+    return result
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    console.error(`[SettingsService] 验证临时模型配置流式支持失败:`, errorMsg)
+
+    return {
+      supported: false,
+      duration: 0,
+      error: errorMsg,
+      timestamp: Date.now()
+    }
+  }
+}
+
+/**
  * 验证模型配置的流式支持
  * 
  * @param modelId 要验证的模型配置ID
@@ -497,33 +565,8 @@ export async function validateModelStreaming(modelId: string): Promise<Streaming
       throw new Error(`模型配置不存在: ${modelId}`)
     }
     
-    // 2. 设置用户数据目录环境变量
-    const userDataPath = app.getPath('userData')
-    process.env.MF_USER_DATA_DIR = userDataPath
-    
-    // 3. 动态导入验证器（运行时导入）
-    // @ts-ignore - agent workspace 在运行时可用，但 TypeScript 配置不包含跨 workspace 引用
-    const { validateStreamingSupport } = await import('agent/llm/streaming-validator')
-    
-    // 4. 构建验证配置
-    const validateConfig = {
-      provider: modelConfig.baseURL ? 'custom' : 'openai',
-      model: modelConfig.model,
-      apiKey: modelConfig.apiKey || '',
-      baseURL: modelConfig.baseURL,
-      temperature: modelConfig.temperature ?? 0,
-      timeout: modelConfig.timeout ?? 60000,
-      maxRetries: modelConfig.maxRetries ?? 2,
-    }
-    
-    console.log(`[SettingsService] 验证配置:`, {
-      model: validateConfig.model,
-      baseURL: validateConfig.baseURL,
-      hasApiKey: !!validateConfig.apiKey
-    })
-    
-    // 5. 执行验证（15秒超时）
-    const result = await validateStreamingSupport(validateConfig, 15000)
+    // 2. 执行验证（15秒超时）
+    const result = await runStreamingValidation(modelConfig)
     
     console.log(`[SettingsService] 验证完成:`, {
       supported: result.supported,
