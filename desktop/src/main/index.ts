@@ -12,6 +12,38 @@ import * as historyService from './services/historyService'
 let mcpConfigWatcher: FSWatcher | null = null
 let reloadDebounceTimer: ReturnType<typeof setTimeout> | null = null
 let lastMcpConfigHash: string | null = null
+const ragImportControllers = new Map<string, AbortController>()
+
+/**
+ * 注册一个可取消的 RAG 导入任务。
+ *
+ * @param taskId - 前端生成的唯一任务 ID
+ * @returns 任务专属的 AbortController
+ */
+function registerRagImportTask(taskId: string): AbortController {
+  if (!taskId || !taskId.trim()) {
+    throw new Error('缺少导入任务 ID')
+  }
+  if (ragImportControllers.has(taskId)) {
+    throw new Error('导入任务 ID 冲突')
+  }
+  const controller = new AbortController()
+  ragImportControllers.set(taskId, controller)
+  return controller
+}
+
+/**
+ * 取消指定的 RAG 导入任务。
+ *
+ * @param taskId - 前端生成的唯一任务 ID
+ * @returns 是否命中并成功发送取消信号
+ */
+function cancelRagImportTask(taskId: string): boolean {
+  const controller = ragImportControllers.get(taskId)
+  if (!controller) return false
+  controller.abort()
+  return true
+}
 
 /**
  * 计算 MCP 配置文件的内容哈希。
@@ -358,16 +390,25 @@ app.whenReady().then(() => {
       filePath: string,
       collection: string,
       split?: { chunkSize?: number; chunkOverlap?: number },
-      options?: { forceMethod?: 'auto' | 'ast' | 'text' }
+      options?: { forceMethod?: 'auto' | 'ast' | 'text' },
+      taskId?: string
     ) => {
       if (!cfgId || !filePath || !collection) throw new Error('参数不完整')
       const cfgList = await settingsService.listVectorDbConfigs()
       const cfg = cfgList.find((v) => v.id === cfgId)
       if (!cfg) throw new Error('RAG 配置不存在')
       if (!cfg.enabled) throw new Error('该 RAG 配置未启用')
-      // @ts-ignore 运行时动态导入 agent 实现
-      const { ingestFileWithConfig } = await import('agent/services/rag')
-      return await ingestFileWithConfig(cfg, filePath, collection, split, options)
+      const controller = registerRagImportTask(taskId || '')
+      try {
+        // @ts-ignore 运行时动态导入 agent 实现
+        const { ingestFileWithConfig } = await import('agent/services/rag')
+        return await ingestFileWithConfig(cfg, filePath, collection, split, {
+          ...options,
+          signal: controller.signal
+        })
+      } finally {
+        ragImportControllers.delete(taskId || '')
+      }
     }
   )
 
@@ -379,18 +420,32 @@ app.whenReady().then(() => {
       dirPath: string,
       collection: string,
       split?: { chunkSize?: number; chunkOverlap?: number },
-      options?: { forceMethod?: 'auto' | 'ast' | 'text' }
+      options?: { forceMethod?: 'auto' | 'ast' | 'text' },
+      taskId?: string
     ) => {
       if (!cfgId || !dirPath || !collection) throw new Error('参数不完整')
       const cfgList = await settingsService.listVectorDbConfigs()
       const cfg = cfgList.find((v) => v.id === cfgId)
       if (!cfg) throw new Error('RAG 配置不存在')
       if (!cfg.enabled) throw new Error('该 RAG 配置未启用')
-      // @ts-ignore 运行时动态导入 agent 实现
-      const { ingestDirWithConfig } = await import('agent/services/rag')
-      return await ingestDirWithConfig(cfg, dirPath, collection, split, options)
+      const controller = registerRagImportTask(taskId || '')
+      try {
+        // @ts-ignore 运行时动态导入 agent 实现
+        const { ingestDirWithConfig } = await import('agent/services/rag')
+        return await ingestDirWithConfig(cfg, dirPath, collection, split, {
+          ...options,
+          signal: controller.signal
+        })
+      } finally {
+        ragImportControllers.delete(taskId || '')
+      }
     }
   )
+
+  ipcMain.handle(IPC_CHANNELS.RAG_IMPORT_CANCEL, async (_event, taskId: string) => {
+    if (!taskId || !taskId.trim()) throw new Error('缺少导入任务 ID')
+    return cancelRagImportTask(taskId)
+  })
 
   createWindow()
 

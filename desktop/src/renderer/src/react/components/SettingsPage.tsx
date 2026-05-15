@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Card, Descriptions, Divider, Form, Input, InputNumber, List, Modal, Space, Typography, message, Upload, Tag, Tooltip, Switch, Tabs, Select } from 'antd'
 import { LeftOutlined, PlusOutlined, EditOutlined, DeleteOutlined, CheckOutlined, UploadOutlined, DownloadOutlined, SettingOutlined, CheckCircleOutlined, CloseCircleOutlined, FolderOpenOutlined, FileAddOutlined } from '@ant-design/icons'
 import type { ModelConfig, StreamingValidationResult, VectorDbConfig, RagValidationResult, ModelConnectionValidationResult } from '../../../../shared/ipc'
@@ -10,6 +10,17 @@ const formatApiKeySource = (source: ModelConnectionValidationResult['apiKeySourc
   if (source === 'ui') return '当前表单'
   if (source === 'env') return '环境变量'
   return '未配置'
+}
+
+/**
+ * 生成单次导入任务使用的唯一 ID。
+ *
+ * 说明：渲染进程只需要在当前会话内唯一，时间戳 + 随机串已足够满足需求。
+ *
+ * @returns 导入任务 ID
+ */
+const createImportTaskId = (): string => {
+  return `rag-import-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 export const SettingsPage: React.FC = () => {
@@ -39,6 +50,7 @@ export const SettingsPage: React.FC = () => {
   const [importPath, setImportPath] = useState<string>('')
   const [importForm] = Form.useForm<{ collection: string; chunkSize?: number; chunkOverlap?: number; parseMethod?: 'auto' | 'ast' | 'text' }>()
   const [importLoading, setImportLoading] = useState(false)
+  const importTaskIdRef = useRef<string | null>(null)
 
   const load = async (): Promise<void> => {
     setLoading(true)
@@ -452,6 +464,8 @@ export const SettingsPage: React.FC = () => {
       const parseOptions = {
         forceMethod: values.parseMethod || 'auto' as 'auto' | 'ast' | 'text'
       }
+      const taskId = createImportTaskId()
+      importTaskIdRef.current = taskId
       
       if (importMode === 'file') {
         const result = await window.api.settings.ragImportFile(
@@ -459,7 +473,8 @@ export const SettingsPage: React.FC = () => {
           importPath, 
           values.collection.trim(), 
           splitOptions,
-          parseOptions
+          parseOptions,
+          taskId
         )
         
         Modal.success({
@@ -477,7 +492,8 @@ export const SettingsPage: React.FC = () => {
           importPath, 
           values.collection.trim(), 
           splitOptions,
-          parseOptions
+          parseOptions,
+          taskId
         )
         
         Modal.success({
@@ -496,9 +512,44 @@ export const SettingsPage: React.FC = () => {
       setImportModalOpen(false)
     } catch (e) {
       // 表单校验或调用失败
-      if (e instanceof Error) message.error(e.message)
+      if (e instanceof Error && e.message.includes('导入已取消')) {
+        message.info('导入已取消')
+        setImportModalOpen(false)
+      } else if (e instanceof Error) {
+        message.error(e.message)
+      }
     } finally {
+      importTaskIdRef.current = null
       setImportLoading(false)
+    }
+  }
+
+  /**
+   * 关闭导入弹窗。
+   *
+   * 关键点：导入进行中时，Cancel 不能只关闭 UI，必须向主进程发送真正的取消信号。
+   */
+  const handleImportCancel = async (): Promise<void> => {
+    if (!importLoading) {
+      setImportModalOpen(false)
+      return
+    }
+
+    const taskId = importTaskIdRef.current
+    if (!taskId) {
+      message.warning('导入任务尚未初始化，请稍后重试')
+      return
+    }
+
+    try {
+      const canceled = await window.api.settings.ragCancelImport(taskId)
+      if (canceled) {
+        message.info('正在取消导入...')
+      } else {
+        message.warning('导入任务已结束')
+      }
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : '取消导入失败')
     }
   }
 
@@ -738,9 +789,10 @@ export const SettingsPage: React.FC = () => {
       <Modal
         title={`导入${importMode === 'file' ? '文件' : '目录'}`}
         open={importModalOpen}
-        onCancel={() => setImportModalOpen(false)}
+        onCancel={handleImportCancel}
         onOk={handleImportOk}
         okText="开始导入"
+        cancelText={importLoading ? '取消导入' : '取消'}
         confirmLoading={importLoading}
       >
         <Space direction="vertical" style={{ width: '100%' }}>

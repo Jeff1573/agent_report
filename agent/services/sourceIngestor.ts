@@ -6,6 +6,7 @@ import { ingestCode } from './codeIngestor.js'
 import { splitDocuments, upsertToChroma } from './storage.js'
 import { logger } from '../utils/logger.js'
 import { METADATA_KEYS } from './metadataSchema.js'
+import { isOperationTimeoutError, throwIfAborted } from '../utils/asyncControl.js'
 
 /**
  * AST 优先入库参数。
@@ -17,6 +18,8 @@ export interface SourceIngestOptions {
   collection: string
   /** 可选：显式指定文件语言（否则按扩展名推断） */
   languageHint?: string
+  /** 可选：导入任务取消信号 */
+  signal?: AbortSignal
 }
 
 /**
@@ -26,21 +29,24 @@ export interface SourceIngestOptions {
  * @returns {Promise<number>} 成功写入 Chroma 的文档数量
  */
 export async function ingestSourceWithFallback(options: SourceIngestOptions): Promise<number> {
-  const { filePath, collection, languageHint } = options
+  const { filePath, collection, languageHint, signal } = options
   if (!filePath || !collection) {
     throw new Error('ingestSourceWithFallback: filePath 与 collection 不能为空')
   }
+  throwIfAborted(signal)
 
   const ext = path.extname(filePath).toLowerCase()
   const astCapable = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.rs', '.go', '.sol', '.java'].includes(ext)
 
   if (astCapable) {
     try {
-      const summary = await ingestCode({ projectPath: filePath, collection })
+      const summary = await ingestCode({ projectPath: filePath, collection, signal })
       if (summary.docs > 0) {
         return summary.docs
       }
     } catch (error) {
+      // 取消与外部依赖超时都不属于“AST 解析失败”，不能继续做无意义回退。
+      if (signal?.aborted || isOperationTimeoutError(error)) throw error
       logger.info('[ingestSourceWithFallback] AST 入库失败，将回退常规路径', {
         filePath,
         collection,
@@ -49,6 +55,7 @@ export async function ingestSourceWithFallback(options: SourceIngestOptions): Pr
     }
   }
 
+  throwIfAborted(signal)
   const source = await fs.readFile(filePath, 'utf-8')
   const uniqueMarker = crypto
     .createHash('sha256')
@@ -69,8 +76,7 @@ export async function ingestSourceWithFallback(options: SourceIngestOptions): Pr
   })
 
   const chunks = await splitDocuments([baseDoc])
-  const result = await upsertToChroma(collection, chunks)
+  throwIfAborted(signal)
+  const result = await upsertToChroma(collection, chunks, { signal })
   return result.documents
 }
-
-

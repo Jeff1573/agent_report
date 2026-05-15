@@ -30,6 +30,12 @@ import { Buffer } from 'node:buffer'
 import { Stats } from 'node:fs'
 import enrichDocuments from './metadata.js'
 import { METADATA_KEYS } from './metadataSchema.js'
+import {
+  isImportCancelledError,
+  isOperationTimeoutError,
+  runWithAbortAndTimeout,
+  throwIfAborted
+} from '../utils/asyncControl.js'
 
 export interface StoredFileMeta {
   /** 原始上传文件名 */
@@ -56,6 +62,14 @@ export interface VectorUpsertResult {
   collectionName: string
   /** 新增文档数量 */
   documents: number
+}
+
+/**
+ * 向量写入控制参数。
+ */
+export interface VectorUpsertOptions {
+  /** 可选：导入任务取消信号 */
+  signal?: AbortSignal
 }
 
 export interface FileDescriptor {
@@ -347,6 +361,73 @@ import { makeKbEmbeddings as makeEmbeddings } from './embeddings.js'
 import { sanitizeCollectionName, generateRandomCollectionName } from '../config/env.js'
 import { logger } from '../utils/logger.js'
 
+const EMBEDDING_TIMEOUT_MS = 15_000 // 15 秒；避免外部 Embedding 服务异常时长期阻塞导入流程。
+const EMBEDDING_PREFLIGHT_TEXT = 'embedding healthcheck'
+
+/**
+ * 构建统一的嵌入超时提示，便于界面直接展示可操作的信息。
+ *
+ * @returns 超时错误文案
+ */
+function buildEmbeddingTimeoutMessage(): string {
+  return `嵌入请求超时（${EMBEDDING_TIMEOUT_MS}ms），请检查 Embedding API 是否可用`
+}
+
+/**
+ * 在真正处理文件前验证嵌入服务是否可用。
+ *
+ * 设计原因：
+ * - Embedding 是入库前提；若它不可用，后续文件解析、切块、raw 落盘都没有意义。
+ * - 预检放在导入入口，可以把失败尽早暴露，避免产生无效工作与副作用。
+ *
+ * @param options - 预检控制参数
+ */
+export async function assertEmbeddingAvailable(
+  options: { signal?: AbortSignal } = {}
+): Promise<void> {
+  const { signal } = options
+  throwIfAborted(signal)
+
+  const provider = (process.env.KB_EMBED_PROVIDER || 'openai').toLowerCase()
+  const model = process.env.KB_EMBED_MODEL || ''
+  const startedAt = Date.now()
+  logger.info('[embedding-preflight] 开始执行嵌入服务预检', {
+    provider,
+    model: model || '(未配置)'
+  })
+
+  const embeddings = makeEmbeddings()
+  try {
+    const vector = await runWithAbortAndTimeout(
+      () => embeddings.embedQuery(EMBEDDING_PREFLIGHT_TEXT),
+      {
+        signal,
+        timeoutMs: EMBEDDING_TIMEOUT_MS,
+        timeoutMessage: buildEmbeddingTimeoutMessage()
+      }
+    )
+
+    if (!Array.isArray(vector) || vector.length === 0) {
+      throw new Error('嵌入服务不可用：返回空向量')
+    }
+
+    logger.info('[embedding-preflight] 嵌入服务预检通过', {
+      provider,
+      model: model || '(未配置)',
+      dimensions: vector.length,
+      durationMs: Date.now() - startedAt
+    })
+  } catch (error) {
+    logger.error('[embedding-preflight] 嵌入服务预检失败', {
+      provider,
+      model: model || '(未配置)',
+      durationMs: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : String(error)
+    })
+    throw error
+  }
+}
+
 /**
  * 检测嵌入模型是否支持批量嵌入。
  * 
@@ -355,14 +436,23 @@ import { logger } from '../utils/logger.js'
  * 
  * @param embeddings 嵌入模型实例
  * @param testText 测试文本
+ * @param signal 导入任务取消信号
  * @returns true 表示支持批量嵌入，false 表示需要单个嵌入
  */
 async function testBatchEmbedding(
   embeddings: OpenAIEmbeddings | GoogleGenerativeAIEmbeddings,
-  testText: string
+  testText: string,
+  signal?: AbortSignal
 ): Promise<boolean> {
   try {
-    const testVectors = await embeddings.embedDocuments([testText])
+    const testVectors = await runWithAbortAndTimeout(
+      () => embeddings.embedDocuments([testText]),
+      {
+        signal,
+        timeoutMs: EMBEDDING_TIMEOUT_MS,
+        timeoutMessage: buildEmbeddingTimeoutMessage()
+      }
+    )
     
     // 检查返回的向量是否有效
     if (!testVectors || testVectors.length === 0 || testVectors[0].length === 0) {
@@ -372,6 +462,10 @@ async function testBatchEmbedding(
     
     return true
   } catch (error) {
+    // 取消与超时都属于“应立即结束当前导入”的场景，不能降级后继续重试。
+    if (isImportCancelledError(error) || isOperationTimeoutError(error)) {
+      throw error
+    }
     logger.warn('[testBatchEmbedding] 批量嵌入测试失败', {
       error: (error as Error).message
     })
@@ -449,12 +543,15 @@ export async function openChromaReadonly(
  *
  * @param {string} collectionName - 集合名
  * @param {Document[]} docs - 待写入文档
+ * @param {VectorUpsertOptions} options - 向量写入控制参数
  * @returns {Promise<VectorUpsertResult>} 写入结果
  */
 export async function upsertToChroma(
   collectionName: string,
-  docs: Document[]
+  docs: Document[],
+  options: VectorUpsertOptions = {}
 ): Promise<VectorUpsertResult> {
+  const { signal } = options
   const runtimeRoot = process.env.KB_STORAGE_ROOT || KB_STORAGE_ROOT
   const runtimeRawDir = process.env.KB_STORAGE_RAW_DIR || KB_STORAGE_RAW_DIR
   
@@ -467,6 +564,7 @@ export async function upsertToChroma(
   if (!Array.isArray(docs) || docs.length === 0) {
     throw new Error('upsertToChroma: docs 不能为空')
   }
+  throwIfAborted(signal)
 
   // 创建向量嵌入实例
   const embeddings = makeEmbeddings()
@@ -474,7 +572,7 @@ export async function upsertToChroma(
   // 检测嵌入模型是否支持批量嵌入（Gemini 某些版本有 bug）
   const embedProvider = (process.env.KB_EMBED_PROVIDER || 'openai').toLowerCase()
   const useBatchEmbedding = embedProvider === 'gemini'
-    ? await testBatchEmbedding(embeddings, docs[0].pageContent)
+    ? await testBatchEmbedding(embeddings, docs[0].pageContent, signal)
     : true
   
   if (!useBatchEmbedding) {
@@ -484,6 +582,7 @@ export async function upsertToChroma(
   if (useBatchEmbedding) {
     // 正常批量模式
     const store = await ensureChromaCollection(embeddings, collectionName)
+    throwIfAborted(signal)
 
     // 统一 ID 生成：优先 chunkId；否则使用 filePath+symbolName+startLine+endLine；再退回 content+filePath
     const computeId = (doc: Document): string => {
@@ -532,13 +631,21 @@ export async function upsertToChroma(
         kept: uniqueDocs.length
       })
     }
-    await store.addDocuments(uniqueDocs, { ids })
+    await runWithAbortAndTimeout(
+      () => store.addDocuments(uniqueDocs, { ids }),
+      {
+        signal,
+        timeoutMs: EMBEDDING_TIMEOUT_MS,
+        timeoutMessage: buildEmbeddingTimeoutMessage()
+      }
+    )
   } else {
     // 单个嵌入模式（解决 Gemini 批量嵌入 bug）
     logger.info('[upsertToChroma] 使用单个嵌入模式处理文档', { count: docs.length })
     const store = await ensureChromaCollection(embeddings, collectionName)
 
     for (let i = 0; i < docs.length; i++) {
+      throwIfAborted(signal)
       const doc = docs[i]
       const fromMeta = (doc.metadata as any)?.chunkId
       const id =
@@ -547,7 +654,14 @@ export async function upsertToChroma(
           : crypto.createHash('sha256').update(doc.pageContent).digest('hex').slice(0, 16)
 
       // 单个文档嵌入
-      const vector = await embeddings.embedQuery(doc.pageContent)
+      const vector = await runWithAbortAndTimeout(
+        () => embeddings.embedQuery(doc.pageContent),
+        {
+          signal,
+          timeoutMs: EMBEDDING_TIMEOUT_MS,
+          timeoutMessage: buildEmbeddingTimeoutMessage()
+        }
+      )
       if (vector.length === 0) {
         throw new Error(`文档 ${i + 1} 嵌入失败：返回空向量`)
       }
@@ -721,6 +835,8 @@ export interface IngestFileParams {
   filename: string
   buffer: Buffer
   split?: SplitOptions
+  /** 可选：导入任务取消信号 */
+  signal?: AbortSignal
 }
 
 /**
@@ -737,15 +853,19 @@ export async function ingestFile(params: IngestFileParams): Promise<SaveFileResu
   if (!runtimeRoot || !runtimeRawDir) {
     throw new Error('知识库目录未配置，无法执行入库流程')
   }
-  const { collectionName, filename, buffer, split } = params
+  const { collectionName, filename, buffer, split, signal } = params
+  throwIfAborted(signal)
   // 保存原始文件
   const meta = await saveRawFile(filename, buffer, collectionName)
+  throwIfAborted(signal)
   // 加载原始文件
   const docs = await loadDocumentsFromRaw(meta.relativePath)
+  throwIfAborted(signal)
   // 切块
   const chunks = await splitDocuments(docs, split)
+  throwIfAborted(signal)
   // 写入向量库
-  await upsertToChroma(collectionName, chunks)
+  await upsertToChroma(collectionName, chunks, { signal })
   return {
     file: meta,
     chunks: chunks.length

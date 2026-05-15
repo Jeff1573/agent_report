@@ -13,6 +13,7 @@ import { createMCPClient } from '../tools/mcp.js'
 import { upsertToChroma } from './storage.js'
 import { logger } from '../utils/logger.js'
 import { METADATA_KEYS } from './metadataSchema.js'
+import { throwIfAborted } from '../utils/asyncControl.js'
 
 /**
  * 默认允许的符号类型集合。
@@ -47,6 +48,8 @@ export interface IngestCodeOptions {
   collection: string
   include?: Iterable<string>
   mcpConfigPath?: string
+  /** 可选：导入任务取消信号 */
+  signal?: AbortSignal
 }
 
 /**
@@ -137,6 +140,7 @@ async function resolveInputFiles(projectPath: string, getProjTool: any): Promise
  */
 export async function ingestCode(options: IngestCodeOptions): Promise<IngestSummary> {
   const { projectPath, collection } = options
+  throwIfAborted(options.signal)
   const includeSet = new Set(
     Array.from(options.include ?? DEFAULT_SYMBOL_TYPES).map((item) => String(item).toLowerCase())
   )
@@ -169,6 +173,7 @@ export async function ingestCode(options: IngestCodeOptions): Promise<IngestSumm
     let fallbackDocs = 0
 
     for (const filePath of files) {
+      throwIfAborted(options.signal)
       try {
         const fileRes = await getFile.invoke({ filePath })
         const parsed = JSON.parse(toText(fileRes))
@@ -178,6 +183,7 @@ export async function ingestCode(options: IngestCodeOptions): Promise<IngestSumm
         let fileHasDoc = false
 
         for (const s of symbols) {
+          throwIfAborted(options.signal)
           if (!shouldKeepSymbol(s, includeSet)) {
             symSkip++
             continue
@@ -193,6 +199,7 @@ export async function ingestCode(options: IngestCodeOptions): Promise<IngestSumm
             symOk++
             fileHasDoc = true
           } catch (error) {
+            if (options.signal?.aborted) throw error
             logger.warn('[ingest-code-with-ast] 符号拉取失败', {
               filePath,
               symbol: s?.name,
@@ -207,6 +214,7 @@ export async function ingestCode(options: IngestCodeOptions): Promise<IngestSumm
           fallbackDocs++
         }
       } catch (error) {
+        if (options.signal?.aborted) throw error
         logger.warn('[ingest-code-with-ast] 文件解析失败', {
           filePath,
           error: (error as Error).message
@@ -228,7 +236,8 @@ export async function ingestCode(options: IngestCodeOptions): Promise<IngestSumm
       return { files: files.length, fileOk, symOk, symSkip, fallbackDocs, docs: docs.length }
     }
 
-    await upsertToChroma(collection, docs)
+    throwIfAborted(options.signal)
+    await upsertToChroma(collection, docs, { signal: options.signal })
     logger.info('写入 Chroma 完成', { collection, count: docs.length })
 
     return { files: files.length, fileOk, symOk, symSkip, fallbackDocs, docs: docs.length }
@@ -236,5 +245,4 @@ export async function ingestCode(options: IngestCodeOptions): Promise<IngestSumm
     await client.close()
   }
 }
-
 

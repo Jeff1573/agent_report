@@ -11,6 +11,7 @@ import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import { ingestSourceWithFallback } from './sourceIngestor.js'
 import { logger } from '../utils/logger.js'
+import { isOperationTimeoutError, throwIfAborted } from '../utils/asyncControl.js'
 
 /**
  * 嵌入模型基础配置（精简版）。
@@ -290,12 +291,23 @@ export async function ingestFileWithConfig(
   filePath: string,
   collection: string,
   split?: { chunkSize?: number; chunkOverlap?: number },
-  options?: { forceMethod?: 'auto' | 'ast' | 'text' }
+  options?: { forceMethod?: 'auto' | 'ast' | 'text'; signal?: AbortSignal }
 ): Promise<{ method: string; chunks: number }> {
   const result = { method: 'text', chunks: 0 }
   
   await withRagEnv(cfg, async () => {
-    const { ingestFile } = await import('./storage.js')
+    throwIfAborted(options?.signal)
+    logger.info('[ingestFile] 开始导入前置检查', {
+      filePath,
+      collection
+    })
+    const { assertEmbeddingAvailable, ingestFile } = await import('./storage.js')
+    // Embedding 是导入前提，先做轻量预检，避免前提不成立时继续处理文件。
+    await assertEmbeddingAvailable({ signal: options?.signal })
+    logger.info('[ingestFile] 前置检查通过，开始处理文件', {
+      filePath,
+      collection
+    })
     const stat = await fs.stat(filePath)
     if (!stat.isFile()) throw new Error('选择的路径不是文件')
     
@@ -317,7 +329,8 @@ export async function ingestFileWithConfig(
       try {
         const docsCount = await ingestSourceWithFallback({
           filePath,
-          collection
+          collection,
+          signal: options?.signal
         })
         
         if (docsCount > 0) {
@@ -327,6 +340,7 @@ export async function ingestFileWithConfig(
           return
         }
       } catch (astError) {
+        if (options?.signal?.aborted || isOperationTimeoutError(astError)) throw astError
         logger.warn(`[ingestFile] AST 解析失败，回退到文本切块: ${filename}`, {
           error: (astError as Error).message
         })
@@ -334,12 +348,14 @@ export async function ingestFileWithConfig(
     }
     
     // 文档文件或 AST 失败的回退：使用传统文本切块
+    throwIfAborted(options?.signal)
     const buffer = await fs.readFile(filePath)
     const res = await ingestFile({
       collectionName: collection,
       filename,
       buffer,
-      split: split ? { chunkSize: split.chunkSize, chunkOverlap: split.chunkOverlap } : undefined
+      split: split ? { chunkSize: split.chunkSize, chunkOverlap: split.chunkOverlap } : undefined,
+      signal: options?.signal
     })
     
     result.method = '文本切块'
@@ -401,18 +417,31 @@ export async function ingestDirWithConfig(
   split?: { chunkSize?: number; chunkOverlap?: number },
   options?: { 
     forceMethod?: 'auto' | 'ast' | 'text',  // 强制处理方式
-    onProgress?: (info: { file: string; type: string; method: string }) => void  // 进度回调
+    onProgress?: (info: { file: string; type: string; method: string }) => void,  // 进度回调
+    signal?: AbortSignal
   }
 ): Promise<{ total: number; processed: number; codeFiles: number; docFiles: number }> {
   const result = { total: 0, processed: 0, codeFiles: 0, docFiles: 0 }
   
   await withRagEnv(cfg, async () => {
-    const { ingestFile } = await import('./storage.js')
+    throwIfAborted(options?.signal)
+    logger.info('[ingestDir] 开始导入前置检查', {
+      dirPath,
+      collection
+    })
+    const { assertEmbeddingAvailable, ingestFile } = await import('./storage.js')
+    // 目录导入只做一次前置探测，通过后再开始扫描和逐文件处理。
+    await assertEmbeddingAvailable({ signal: options?.signal })
+    logger.info('[ingestDir] 前置检查通过，开始扫描目录', {
+      dirPath,
+      collection
+    })
     const stat = await fs.stat(dirPath)
     if (!stat.isDirectory()) throw new Error('选择的路径不是目录')
     
     // 扫描所有文件
     async function walk(start: string): Promise<string[]> {
+      throwIfAborted(options?.signal)
       const out: string[] = []
       const entries = await fs.readdir(start, { withFileTypes: true })
       for (const entry of entries) {
@@ -433,6 +462,7 @@ export async function ingestDirWithConfig(
     result.total = files.length
     
     for (const filePath of files) {
+      throwIfAborted(options?.signal)
       const strategy = getFileStrategy(filePath)
       
       if (strategy.skip) {
@@ -460,7 +490,8 @@ export async function ingestDirWithConfig(
           try {
             const docsCount = await ingestSourceWithFallback({
               filePath,
-              collection
+              collection,
+              signal: options?.signal
             })
             
             if (docsCount > 0) {
@@ -470,6 +501,7 @@ export async function ingestDirWithConfig(
               continue
             }
           } catch (astError) {
+            if (options?.signal?.aborted || isOperationTimeoutError(astError)) throw astError
             logger.warn(`[ingestDir] AST 解析失败，回退到文本切块: ${filename}`, {
               error: (astError as Error).message
             })
@@ -488,7 +520,8 @@ export async function ingestDirWithConfig(
           collectionName: collection,
           filename,
           buffer,
-          split: split ? { chunkSize: split.chunkSize, chunkOverlap: split.chunkOverlap } : undefined
+          split: split ? { chunkSize: split.chunkSize, chunkOverlap: split.chunkOverlap } : undefined,
+          signal: options?.signal
         })
         
         if (strategy.type === 'code') {
@@ -501,6 +534,8 @@ export async function ingestDirWithConfig(
         logger.info(`[ingestDir] 文档处理成功: ${filename}`)
         
       } catch (error) {
+        // 目录导入遇到全局依赖超时时立即停止，避免对后续文件重复等待同一故障。
+        if (options?.signal?.aborted || isOperationTimeoutError(error)) throw error
         logger.error(`[ingestDir] 文件处理失败: ${filename}`, {
           error: (error as Error).message
         })
@@ -510,5 +545,3 @@ export async function ingestDirWithConfig(
   
   return result
 }
-
-

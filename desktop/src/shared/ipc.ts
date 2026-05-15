@@ -41,7 +41,8 @@ export const IPC_CHANNELS = {
   SETTINGS_RAG_VALIDATE: 'settings/rag/validate',
   // 入库相关（文件/目录）
   RAG_IMPORT_FILE: 'rag/import/file',
-  RAG_IMPORT_DIR: 'rag/import/dir'
+  RAG_IMPORT_DIR: 'rag/import/dir',
+  RAG_IMPORT_CANCEL: 'rag/import/cancel'
 } as const
 
 /** 流式事件类型 */
@@ -328,7 +329,8 @@ export interface PreloadApi {
       filePath: string,
       collection: string,
       split?: { chunkSize?: number; chunkOverlap?: number },
-      options?: { forceMethod?: 'auto' | 'ast' | 'text' }
+      options?: { forceMethod?: 'auto' | 'ast' | 'text' },
+      taskId?: string
     ) => Promise<{ method: string; chunks: number }>
     /** 导入目录到指定 collection */
     ragImportDir: (
@@ -336,7 +338,10 @@ export interface PreloadApi {
       dirPath: string,
       collection: string,
       split?: { chunkSize?: number; chunkOverlap?: number },
-      options?: { forceMethod?: 'auto' | 'ast' | 'text' }
+      options?: { forceMethod?: 'auto' | 'ast' | 'text' },
+      taskId?: string
     ) => Promise<{ total: number; processed: number; codeFiles: number; docFiles: number }>
+    /** 取消指定的导入任务 */
+    ragCancelImport: (taskId: string) => Promise<boolean>
   }
 }
