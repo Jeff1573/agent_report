@@ -303,7 +303,8 @@ export const AgentChat: React.FC = () => {
         },
         { 
           summary: false,
-          threadId: 'default-thread',
+          // Agent 线程必须跟随 UI 会话，避免清空/新建对话后复用旧的 LangGraph 状态。
+          threadId: sessionId,
           modelConfigId: activeModelId,
           ragEnabled: ragEnabled,
           ragConfigId: ragEnabled ? ragConfigId : undefined,
@@ -496,6 +497,9 @@ export const AgentChat: React.FC = () => {
       cancelText: '取消',
       okType: 'danger',
       onOk: async () => {
+        const clearedAt = Date.now()
+        const nextSessionId = `session-${clearedAt}`
+
         // 清空前端状态
         setMessages([])
         setInput('')
@@ -513,14 +517,17 @@ export const AgentChat: React.FC = () => {
             id: sessionId,
             title: '新对话',
             messages: [],
-            createdAt: Date.now(),
-            updatedAt: Date.now()
+            createdAt: clearedAt,
+            updatedAt: clearedAt
           }
           await window.api.history.save(emptySession)
           console.log('[AgentChat] 空会话已保存')
         } catch (error) {
           console.error('[AgentChat] 保存空会话失败:', error)
         }
+
+        // 清空后切换到全新的 Agent 线程，规避旧线程中未闭合 tool_calls 的残留状态。
+        setSessionId(nextSessionId)
         
         antMessage.success('对话已清空')
       }

@@ -26,6 +26,11 @@ type RuntimeConfig = {
   persistenceMode?: 'memory' | 'postgres'
 }
 
+type RuntimeStreamOptions = {
+  summary?: boolean
+  threadId?: string
+}
+
 let runtime: AgentRuntime | null = null
 let isInitializing = false
 let abortController: AbortController | null = null
@@ -164,6 +169,63 @@ function transformEvent(ev: unknown): AgentStreamEvent {
   }
 }
 
+function errorToText(error: unknown): string {
+  if (error instanceof Error) {
+    return `${error.name}: ${error.message}\n${error.stack ?? ''}`
+  }
+
+  try {
+    return JSON.stringify(error)
+  } catch {
+    return String(error)
+  }
+}
+
+function isInvalidToolResultsError(error: unknown): boolean {
+  const text = errorToText(error)
+  return text.includes('INVALID_TOOL_RESULTS') ||
+    text.includes('insufficient tool messages') ||
+    (text.includes("assistant message with 'tool_calls'") && text.includes('tool_call_id'))
+}
+
+function buildRecoveryThreadId(threadId?: string): string {
+  const base = threadId && threadId.trim() ? threadId.trim() : 'thread'
+  return `${base}-recovery-${Date.now()}`
+}
+
+async function resetRuntimeForProtocolRecovery(): Promise<void> {
+  if (!runtime) return
+
+  try {
+    await runtime.close()
+  } catch (error) {
+    console.warn('[AgentService] 协议错误恢复时关闭旧 Runtime 失败:', error)
+  } finally {
+    runtime = null
+  }
+}
+
+async function consumeRuntimeStream(
+  rt: AgentRuntime,
+  message: string,
+  streamOptions: RuntimeStreamOptions,
+  onEvent: (event: AgentStreamEvent) => void
+): Promise<void> {
+  const stream = (rt.streamEvents as (msg: string, opts?: RuntimeStreamOptions) => AsyncGenerator<unknown>)(message, streamOptions)
+
+  for await (const ev of stream) {
+    // 检查是否被中止
+    if (abortController?.signal.aborted) {
+      console.log('[AgentService] 聊天被用户中止')
+      break
+    }
+
+    // 转换并发送事件
+    const ipcEvent = transformEvent(ev)
+    onEvent(ipcEvent)
+  }
+}
+
 /**
  * 执行流式聊天
  * 
@@ -180,10 +242,11 @@ export async function chatStream(
   // 创建新的 AbortController
   abortController = new AbortController()
   isChatting = true // 标记对话开始
+  let streamOptions: RuntimeStreamOptions | undefined
   
   try {
     const rt = await getRuntime()
-    const streamOptions = {
+    streamOptions = {
       summary: options?.summary ?? false,
       threadId: options?.threadId
     }
@@ -203,20 +266,31 @@ export async function chatStream(
     }
 
     // 使用 events 模式（更适合流式 UI）
-    const stream = (rt.streamEvents as (msg: string, opts?: { summary?: boolean; threadId?: string }) => AsyncGenerator<unknown>)(message, streamOptions)
-
-    for await (const ev of stream) {
-      // 检查是否被中止
-      if (abortController.signal.aborted) {
-        console.log('[AgentService] 聊天被用户中止')
-        break
-      }
-
-      // 转换并发送事件
-      const ipcEvent = transformEvent(ev)
-      onEvent(ipcEvent)
-    }
+    await consumeRuntimeStream(rt, message, streamOptions, onEvent)
   } catch (error) {
+    if (streamOptions && isInvalidToolResultsError(error) && !abortController?.signal.aborted) {
+      try {
+        const recoveryThreadId = buildRecoveryThreadId(streamOptions.threadId)
+        console.warn('[AgentService] 检测到工具消息链不完整，切换干净线程重试:', recoveryThreadId)
+        await resetRuntimeForProtocolRecovery()
+        const rt = await getRuntime()
+        await consumeRuntimeStream(rt, message, {
+          ...streamOptions,
+          // 换线程避开已损坏的 checkpointer 状态，防止 tool_calls 残链再次进入模型。
+          threadId: recoveryThreadId
+        }, onEvent)
+        return
+      } catch (retryError) {
+        console.error('[AgentService] 工具消息链错误恢复失败:', retryError)
+        onEvent({
+          type: 'error',
+          ts: Date.now(),
+          error: retryError instanceof Error ? retryError.message : String(retryError)
+        })
+        return
+      }
+    }
+
     console.error('[AgentService] 聊天流式处理错误:', error)
     
     // 发送错误事件
