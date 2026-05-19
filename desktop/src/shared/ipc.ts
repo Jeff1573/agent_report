@@ -233,7 +233,7 @@ export interface RagValidationResult {
   info?: {
     /** Chroma 心跳连通 */
     heartbeat?: boolean
-    /** 默认集合是否存在 */
+    /** 默认集合状态：true=已确认存在，false=已确认不存在，undefined=当前无法确认 */
     defaultCollectionExists?: boolean
   }
   /** 时间戳 */

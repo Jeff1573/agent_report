@@ -350,8 +350,11 @@ export const SettingsPage: React.FC = () => {
       setRagValidating(true)
       const res: RagValidationResult = await window.api.settings.ragValidate(cfg)
       if (res.ok) {
+        const hasConfiguredDefaultCollection = Boolean(cfg.defaultCollection?.trim())
         if (res.info?.defaultCollectionExists === false) {
           message.warning('连通成功，但默认集合不存在')
+        } else if (hasConfiguredDefaultCollection && res.info?.defaultCollectionExists === undefined) {
+          message.warning('连通成功，但无法确认默认集合状态')
         } else {
           message.success('连接正常')
         }

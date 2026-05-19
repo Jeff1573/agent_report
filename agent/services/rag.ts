@@ -56,9 +56,16 @@ export interface RagValidationResultLite {
   ok: boolean
   errors: string[]
   warnings?: string[]
-  info?: { heartbeat?: boolean; defaultCollectionExists?: boolean }
+  info?: {
+    heartbeat?: boolean
+    /** true=已确认存在；false=已确认不存在；undefined=当前无法确认。 */
+    defaultCollectionExists?: boolean
+  }
   timestamp: number
 }
+
+const DEFAULT_CHROMA_TENANT = 'default_tenant'
+const DEFAULT_CHROMA_DATABASE = 'default_database'
 
 /**
  * 构建 Chroma REST API 的完整 URL，支持 v1/v2。
@@ -91,9 +98,9 @@ function buildApiUrl(baseUrl: string, version: 'v1' | 'v2', endpoint: string): s
  * - 兼容 Array 顶层返回，或对象中的 collections/items/data/results/result
  *
  * @param {unknown} json - 原始 JSON 数据
- * @returns {unknown[]} 集合条目数组
+ * @returns {unknown[] | null} 集合条目数组；响应结构不可识别时返回 null
  */
-function extractCollectionsArray(json: unknown): unknown[] {
+function extractCollectionsArray(json: unknown): unknown[] | null {
   if (Array.isArray(json)) return json
   if (json && typeof json === 'object') {
     const obj = json as Record<string, unknown>
@@ -103,11 +110,11 @@ function extractCollectionsArray(json: unknown): unknown[] {
       if (Array.isArray(val)) return val
       if (key === 'data' && val && typeof val === 'object') {
         const nested = extractCollectionsArray(val)
-        if (Array.isArray(nested) && nested.length > 0) return nested
+        if (nested !== null) return nested
       }
     }
   }
-  return []
+  return null
 }
 
 /**
@@ -168,7 +175,7 @@ export async function validateRagConfig(cfg: VectorDbConfigLite): Promise<RagVal
   const warnings: string[] = []
 
   let heartbeat = false
-  let defaultCollectionExists = false
+  let defaultCollectionExists: boolean | undefined
 
   const base = norm.connection.url.replace(/\/$/, '')
 
@@ -202,7 +209,13 @@ export async function validateRagConfig(cfg: VectorDbConfigLite): Promise<RagVal
   if (heartbeat && norm.defaultCollection) {
     try {
       async function listCollections(version: 'v2' | 'v1'): Promise<unknown | null> {
-        const url = buildApiUrl(base, version, 'collections')
+        // Chroma v2 已将集合接口下沉到 tenant/database 维度，旧的 /api/v2/collections 会返回 404。
+        // 当前配置模型尚未暴露 tenant/database，因此最小修复先使用默认租户与默认数据库。
+        const endpoint =
+          version === 'v2'
+            ? `tenants/${DEFAULT_CHROMA_TENANT}/databases/${DEFAULT_CHROMA_DATABASE}/collections`
+            : 'collections'
+        const url = buildApiUrl(base, version, endpoint)
         const controller = new AbortController()
         const t = setTimeout(() => controller.abort(), 7000)
         try {
@@ -221,9 +234,13 @@ export async function validateRagConfig(cfg: VectorDbConfigLite): Promise<RagVal
 
       if (data != null) {
         const entries = extractCollectionsArray(data)
-        const exists = hasCollection(entries, norm.defaultCollection)
-        defaultCollectionExists = exists
-        if (!exists) warnings.push(`默认集合不存在：${norm.defaultCollection}`)
+        if (entries === null) {
+          warnings.push(`集合列表响应结构无法识别，无法确认默认集合状态`)
+        } else {
+          const exists = hasCollection(entries, norm.defaultCollection)
+          defaultCollectionExists = exists
+          if (!exists) warnings.push(`默认集合不存在：${norm.defaultCollection}`)
+        }
       } else {
         warnings.push(`无法获取集合列表（v2/v1 均失败），跳过集合存在性检查`)
       }
